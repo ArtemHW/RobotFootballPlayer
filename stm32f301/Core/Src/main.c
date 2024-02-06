@@ -49,9 +49,6 @@ ADC_HandleTypeDef hadc1;
 
 SPI_HandleTypeDef hspi2;
 
-TIM_HandleTypeDef htim1;
-TIM_HandleTypeDef htim2;
-
 UART_HandleTypeDef huart3;
 
 osThreadId PS_MeasureHandle;
@@ -67,8 +64,6 @@ EventGroupHandle_t pc14EventGroup;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_TIM1_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART3_UART_Init(void);
@@ -79,6 +74,8 @@ void espCommunication(void const * argument);
 
 /* USER CODE BEGIN PFP */
 void ADC1_configuration(void);
+void TIM1_configuration(void);
+void TIM2_configuration(void);
 
 /* USER CODE END PFP */
 
@@ -115,13 +112,13 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_TIM1_Init();
-  MX_TIM2_Init();
   MX_ADC1_Init();
   MX_SPI2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   ADC1_configuration();
+  TIM1_configuration();
+  TIM2_configuration();
 
 
   pc13EventGroup = xEventGroupCreate();
@@ -217,8 +214,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_TIM1|RCC_PERIPHCLK_ADC1;
-  PeriphClkInit.Tim1ClockSelection = RCC_TIM1CLK_HCLK;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC1;
   PeriphClkInit.Adc1ClockSelection = RCC_ADC1PLLCLK_DIV2;
 
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -321,112 +317,6 @@ static void MX_SPI2_Init(void)
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
-
-}
-
-/**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM1_Init(void)
-{
-
-  /* USER CODE BEGIN TIM1_Init 0 */
-
-  /* USER CODE END TIM1_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM1_Init 1 */
-
-  /* USER CODE END TIM1_Init 1 */
-  htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 1024;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 65535;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_IC_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM1_Init 2 */
-
-  /* USER CODE END TIM1_Init 2 */
-
-}
-
-/**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1024;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 65535;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -608,7 +498,44 @@ void ADC1_configuration(void)
 	return;
 }
 
+void TIM1_configuration(void)
+{
+    // Enable the TIM1 clock
+    RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
 
+    // Configure GPIO pins for TIM1 PA9-CH2 and PA8-CH1
+    GPIOA->MODER |= (1<<17);
+    GPIOA->MODER |= (1<<19);
+    GPIOA->PUPDR |= (1<<17); //Pull-down
+    GPIOA->PUPDR |= (1<<19); //Pull-down
+    GPIOA->AFR[1] |= (6); //AF6
+    GPIOA->AFR[1] |= (6<<4); //AF6
+
+    // Configure TIM2
+	TIM1->CR1 |= TIM_CR1_ARPE; //ARPE: Auto-reload preload enable
+	TIM1->SMCR |= (TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0); // Encoder mode 3
+
+	TIM1->CCMR1 |= (1<<0);
+	TIM1->CCMR1 |= (1<<8);
+	TIM1->CCER |= (1<<0);
+	TIM1->CCER |= (1<<4);
+
+
+
+//    // Enable the TIM1 interrupt
+//    NVIC_EnableIRQ(TIM1_CC_IRQHandler);
+//
+//    // Set priority for the TIM1 interrupt
+//    NVIC_SetPriority(TIM1_CC_IRQHandler, 5); // Adjust priority as needed
+
+    // Enable the TIM1 counter
+    TIM1->CR1 |= TIM_CR1_CEN;
+}
+
+void TIM2_configuration(void)
+{
+
+}
 
 /* USER CODE END 4 */
 
