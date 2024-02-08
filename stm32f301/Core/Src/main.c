@@ -511,7 +511,7 @@ void TIM1_configuration(void)
     GPIOA->AFR[1] |= (6); //AF6
     GPIOA->AFR[1] |= (6<<4); //AF6
 
-    // Configure TIM2
+    // Configure TIM1
 	TIM1->CR1 |= TIM_CR1_ARPE; //ARPE: Auto-reload preload enable
 	TIM1->SMCR |= (TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0); // Encoder mode 3
 
@@ -519,6 +519,8 @@ void TIM1_configuration(void)
 	TIM1->CCMR1 |= (1<<8);
 	TIM1->CCER |= (1<<0);
 	TIM1->CCER |= (1<<4);
+
+//	TIM1->RCR = 0xFFFF; // Repetition counter value
 
 
 
@@ -534,7 +536,29 @@ void TIM1_configuration(void)
 
 void TIM2_configuration(void)
 {
+    // Enable the TIM2 clock
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 
+    // Configure GPIO pins for TIM2 PA1-CH2 and PA0-CH1
+    GPIOA->MODER |= (1<<1);
+    GPIOA->MODER |= (1<<3);
+    GPIOA->PUPDR |= (1<<1); //Pull-down
+    GPIOA->PUPDR |= (1<<3); //Pull-down
+    GPIOA->AFR[0] |= (1); //AF1
+    GPIOA->AFR[0] |= (1<<4); //AF1
+
+    // Configure TIM2
+	TIM2->CR1 |= TIM_CR1_ARPE; //ARPE: Auto-reload preload enable
+	TIM2->SMCR |= (TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0); // Encoder mode 3
+
+	TIM2->CCMR1 |= (1<<0);
+	TIM2->CCMR1 |= (1<<8);
+	TIM2->CCER |= (1<<0);
+	TIM2->CCER |= (1<<4);
+
+
+    // Enable the TIM2 counter
+    TIM2->CR1 |= TIM_CR1_CEN;
 }
 
 /* USER CODE END 4 */
