@@ -42,6 +42,7 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -55,10 +56,17 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern TIM_HandleTypeDef htim17;
 extern TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN EV */
+extern struct EncoderStr EncoderR;
+extern struct EncoderStr EncoderL;
 
+extern struct SoftPWM SoftPwmR;
+extern struct SoftPWM SoftPwmL;
+
+extern uint16_t softCounterValue;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -160,6 +168,24 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles TIM1 trigger, commutation and TIM17 interrupts.
+  */
+void TIM1_TRG_COM_TIM17_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM1_TRG_COM_TIM17_IRQn 0 */
+	if((TIM17->SR & TIM_SR_UIF) == TIM_SR_UIF) {
+		EncoderR.timeNew = -(65535 - EncoderR.timeNew);
+		TIM17->SR &= ~(TIM_SR_UIF);
+	}
+
+  /* USER CODE END TIM1_TRG_COM_TIM17_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim17);
+  /* USER CODE BEGIN TIM1_TRG_COM_TIM17_IRQn 1 */
+
+  /* USER CODE END TIM1_TRG_COM_TIM17_IRQn 1 */
+}
+
+/**
   * @brief This function handles EXTI line[15:10] interrupts.
   */
 void EXTI15_10_IRQHandler(void)
@@ -200,6 +226,92 @@ void ADC1_IRQHandler(void)
 {
 	__asm__ volatile("NOP");
 	ADC1->ISR |= ADC_ISR_AWD1;
+	__asm__ volatile("NOP");
+}
+
+void TIM1_UP_TIM16_IRQHandler(void)
+{
+	if((TIM1->SR & TIM_SR_UIF) == TIM_SR_UIF) {
+		EncoderR.posCntUpdate = 1;
+		TIM1->SR &= ~(TIM_SR_UIF);
+	}
+	if((TIM16->SR & TIM_SR_UIF) == TIM_SR_UIF) {
+		softCounterValue++;
+
+		if(softCounterValue >= 100) {
+			softCounterValue = 0;
+		}
+
+		if(SoftPwmR.pwmValue >= 0) {
+			if(softCounterValue < SoftPwmR.pwmValue) {
+				if(SoftPwmR.status != 1) {
+					GPIOA->ODR &= ~(1<<7); //_3A
+					GPIOB->ODR |= (1<<0); //_4A
+					SoftPwmR.status = 1;
+				}
+			} else {
+				if(SoftPwmR.status != 0) {
+					GPIOA->ODR &= ~(1<<7); //_3A
+					GPIOB->ODR &= ~(1<<0); //_4A
+					SoftPwmR.status = 0;
+				}
+			}
+		} else if(SoftPwmR.pwmValue < 0) {
+			if(softCounterValue < (-SoftPwmR.pwmValue)) {
+				if(SoftPwmR.status != 2) {
+					GPIOA->ODR |= (1<<7); //_3A
+					GPIOB->ODR &= ~(1<<0); //_4A
+					SoftPwmR.status = 2;
+				}
+			} else {
+				if(SoftPwmR.status != 0) {
+					GPIOA->ODR &= ~(1<<7); //_3A
+					GPIOB->ODR &= ~(1<<0); //_4A
+					SoftPwmR.status = 0;
+				}
+			}
+		}
+
+		if(SoftPwmL.pwmValue >= 0) {
+			if(softCounterValue < SoftPwmL.pwmValue) {
+				if(SoftPwmL.status != 1) {
+					GPIOA->ODR &= ~(1<<4); //_1A
+					GPIOA->ODR |= (1<<5); //_2A
+					SoftPwmL.status = 1;
+				}
+			} else {
+				if(SoftPwmL.status != 0) {
+					GPIOA->ODR &= ~(1<<4); //_1A
+					GPIOA->ODR &= ~(1<<5); //_2A
+					SoftPwmL.status = 0;
+				}
+			}
+		} else if(SoftPwmL.pwmValue < 0) {
+			if(softCounterValue < (-SoftPwmL.pwmValue)) {
+				if(SoftPwmL.status != 2) {
+					GPIOA->ODR |= (1<<4); //_1A
+					GPIOA->ODR &= ~(1<<5); //_2A
+					SoftPwmL.status = 2;
+				}
+			} else {
+				if(SoftPwmL.status != 0) {
+					GPIOA->ODR &= ~(1<<4); //_1A
+					GPIOA->ODR &= ~(1<<5); //_2A
+					SoftPwmL.status = 0;
+				}
+			}
+		}
+
+		TIM16->SR &= ~(TIM_SR_UIF);
+	}
+
+}
+
+void TIM2_IRQHandler(void)
+{
+	__asm__ volatile("NOP");
+	EncoderL.posCntUpdate = 1;
+	TIM2->SR &= ~(TIM_SR_UIF);
 	__asm__ volatile("NOP");
 }
 

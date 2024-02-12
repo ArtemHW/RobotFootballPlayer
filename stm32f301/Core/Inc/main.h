@@ -36,7 +36,23 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+struct EncoderStr {
+	int timeNew;
+	int timeOld;
+	int32_t positionNew;
+	int32_t positionOld;
+	uint8_t posCntUpdate;
+	int rpm;
+};
 
+struct SoftPWM {
+	int16_t reqValue;
+	int16_t curValue;
+	int16_t pwmValue;
+	//uint16_t softCounterValue;
+	uint8_t status;
+
+};
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -79,7 +95,14 @@ void Error_Handler(void);
 #define SPI2_CS_R_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-
+#define BATMAXV 2200
+#define BATMINV 2110
+#define OVERVOLTAGEONLED 0x1
+#define UNDERVOLTAGEONLED 0x2
+#define KP 0.002f
+#define KI  0.0f   //0.0001f
+#define MAXRPM 8000
+#define ENCDELAY 8
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

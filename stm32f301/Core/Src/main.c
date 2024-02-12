@@ -34,8 +34,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BATMAXV 2200
-#define BATMINV 2110
 
 /* USER CODE END PD */
 
@@ -49,16 +47,30 @@ ADC_HandleTypeDef hadc1;
 
 SPI_HandleTypeDef hspi2;
 
+TIM_HandleTypeDef htim16;
+TIM_HandleTypeDef htim17;
+
 UART_HandleTypeDef huart3;
 
 osThreadId PS_MeasureHandle;
 osThreadId PC_13_LEDHandle;
 osThreadId PC_14_LEDHandle;
 osThreadId EspCommunicationHandle;
+osThreadId EncoderRHandle;
+osThreadId EncoderLHandle;
+osThreadId SoftwarePwmRHandle;
+osThreadId SoftwarePwmLHandle;
 /* USER CODE BEGIN PV */
 uint16_t batteryVoltage[10]; // Battery voltage.
 EventGroupHandle_t pc13EventGroup;
 EventGroupHandle_t pc14EventGroup;
+
+struct EncoderStr EncoderR, EncoderL;
+struct SoftPWM SoftPwmR, SoftPwmL;
+
+float kToRpm;
+
+uint16_t softCounterValue;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -67,15 +79,23 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_TIM17_Init(void);
+static void MX_TIM16_Init(void);
 void psMeasure(void const * argument);
 void pc13LedCntrl(void const * argument);
 void pc14LedCntrl(void const * argument);
 void espCommunication(void const * argument);
+void encoderR(void const * argument);
+void encoderL(void const * argument);
+void softwarePWMR(void const * argument);
+void softwarePWML(void const * argument);
 
 /* USER CODE BEGIN PFP */
 void ADC1_configuration(void);
 void TIM1_configuration(void);
 void TIM2_configuration(void);
+void TIM16_configuration(void);
+void TIM17_configuration(void);
 
 /* USER CODE END PFP */
 
@@ -91,6 +111,33 @@ void TIM2_configuration(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	EncoderR.timeNew = 0;
+	EncoderR.timeOld = 0;
+	EncoderR.positionNew = 0;
+	EncoderR.positionOld = 0;
+	EncoderR.posCntUpdate = 0;
+	EncoderR.rpm = 0;
+
+	EncoderL.timeNew = 0;
+	EncoderL.timeOld = 0;
+	EncoderL.positionNew = 0;
+	EncoderL.positionOld = 0;
+	EncoderL.posCntUpdate = 0;
+	EncoderL.rpm = 0;
+
+	SoftPwmR.curValue = 0;
+	SoftPwmR.reqValue = 0;
+	SoftPwmR.pwmValue = 0;
+	//SoftPwmR.softCounterValue = 0;
+	SoftPwmR.status = 0;
+
+	SoftPwmL.curValue = 0;
+	SoftPwmL.reqValue = 0;
+	SoftPwmL.pwmValue = 0;
+	//SoftPwmL.softCounterValue = 0;
+	SoftPwmL.status = 0;
+
+	softCounterValue = 0;
 
   /* USER CODE END 1 */
 
@@ -115,11 +162,16 @@ int main(void)
   MX_ADC1_Init();
   MX_SPI2_Init();
   MX_USART3_UART_Init();
+  MX_TIM17_Init();
+  MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
   ADC1_configuration();
   TIM1_configuration();
   TIM2_configuration();
+  TIM17_configuration();
+  TIM16_configuration();
 
+  kToRpm = (64*1000*60)/256;
 
   pc13EventGroup = xEventGroupCreate();
   pc14EventGroup = xEventGroupCreate();
@@ -155,8 +207,24 @@ int main(void)
   PC_14_LEDHandle = osThreadCreate(osThread(PC_14_LED), NULL);
 
   /* definition and creation of EspCommunication */
-  osThreadDef(EspCommunication, espCommunication, osPriorityNormal, 0, 256);
+  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 256);
   EspCommunicationHandle = osThreadCreate(osThread(EspCommunication), NULL);
+
+  /* definition and creation of EncoderR */
+  osThreadDef(EncoderR, encoderR, osPriorityNormal, 0, 128);
+  EncoderRHandle = osThreadCreate(osThread(EncoderR), NULL);
+
+  /* definition and creation of EncoderL */
+  osThreadDef(EncoderL, encoderL, osPriorityNormal, 0, 128);
+  EncoderLHandle = osThreadCreate(osThread(EncoderL), NULL);
+
+  /* definition and creation of SoftwarePwmR */
+  osThreadDef(SoftwarePwmR, softwarePWMR, osPriorityNormal, 0, 256);
+  SoftwarePwmRHandle = osThreadCreate(osThread(SoftwarePwmR), NULL);
+
+  /* definition and creation of SoftwarePwmL */
+  osThreadDef(SoftwarePwmL, softwarePWML, osPriorityNormal, 0, 256);
+  SoftwarePwmLHandle = osThreadCreate(osThread(SoftwarePwmL), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -214,7 +282,10 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_TIM16|RCC_PERIPHCLK_TIM17
+                              |RCC_PERIPHCLK_ADC1;
+  PeriphClkInit.Tim16ClockSelection = RCC_TIM16CLK_HCLK;
+  PeriphClkInit.Tim17ClockSelection = RCC_TIM17CLK_HCLK;
   PeriphClkInit.Adc1ClockSelection = RCC_ADC1PLLCLK_DIV2;
 
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -321,6 +392,70 @@ static void MX_SPI2_Init(void)
 }
 
 /**
+  * @brief TIM16 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM16_Init(void)
+{
+
+  /* USER CODE BEGIN TIM16_Init 0 */
+
+  /* USER CODE END TIM16_Init 0 */
+
+  /* USER CODE BEGIN TIM16_Init 1 */
+
+  /* USER CODE END TIM16_Init 1 */
+  htim16.Instance = TIM16;
+  htim16.Init.Prescaler = 63;
+  htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim16.Init.Period = 10;
+  htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim16.Init.RepetitionCounter = 0;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM16_Init 2 */
+
+  /* USER CODE END TIM16_Init 2 */
+
+}
+
+/**
+  * @brief TIM17 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM17_Init(void)
+{
+
+  /* USER CODE BEGIN TIM17_Init 0 */
+
+  /* USER CODE END TIM17_Init 0 */
+
+  /* USER CODE BEGIN TIM17_Init 1 */
+
+  /* USER CODE END TIM17_Init 1 */
+  htim17.Instance = TIM17;
+  htim17.Init.Prescaler = 999;
+  htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim17.Init.Period = 65535;
+  htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim17.Init.RepetitionCounter = 0;
+  htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim17) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM17_Init 2 */
+
+  /* USER CODE END TIM17_Init 2 */
+
+}
+
+/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -389,32 +524,34 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : EN12_Pin EN34_Pin */
-  GPIO_InitStruct.Pin = EN12_Pin|EN34_Pin;
+  /*Configure GPIO pins : EN12_Pin _1A_Pin _2A_Pin EN34_Pin
+                           _3A_Pin */
+  GPIO_InitStruct.Pin = EN12_Pin|_1A_Pin|_2A_Pin|EN34_Pin
+                          |_3A_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : _1A_Pin _2A_Pin _3A_Pin */
-  GPIO_InitStruct.Pin = _1A_Pin|_2A_Pin|_3A_Pin;
+  /*Configure GPIO pin : _4A_Pin */
+  GPIO_InitStruct.Pin = _4A_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : _4A_Pin SPI2_CS_L_Pin SPI2_CS_R_Pin */
-  GPIO_InitStruct.Pin = _4A_Pin|SPI2_CS_L_Pin|SPI2_CS_R_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(_4A_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : RST_ESP_Pin EN_ESP_Pin */
   GPIO_InitStruct.Pin = RST_ESP_Pin|EN_ESP_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SPI2_CS_L_Pin SPI2_CS_R_Pin */
+  GPIO_InitStruct.Pin = SPI2_CS_L_Pin|SPI2_CS_R_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA10 PA11 */
@@ -452,8 +589,8 @@ void ADC1_configuration(void)
 	DMA1_Channel1->CCR &= ~DMA_CCR_TEIE;
 
 	DMA1_Channel1->CNDTR = 10;
-	DMA1_Channel1->CPAR = &(ADC1->DR);
-	DMA1_Channel1->CMAR = &batteryVoltage[0];
+	DMA1_Channel1->CPAR = (uint32_t)&(ADC1->DR);
+	DMA1_Channel1->CMAR = (uint32_t)&batteryVoltage[0];
 
 	//  DMA1_Channel1->CCR |= DMA_CCR_EN;
 
@@ -514,21 +651,22 @@ void TIM1_configuration(void)
     // Configure TIM1
 	TIM1->CR1 |= TIM_CR1_ARPE; //ARPE: Auto-reload preload enable
 	TIM1->SMCR |= (TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0); // Encoder mode 3
+	TIM1->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
 
 	TIM1->CCMR1 |= (1<<0);
 	TIM1->CCMR1 |= (1<<8);
 	TIM1->CCER |= (1<<0);
 	TIM1->CCER |= (1<<4);
 
+	TIM1->PSC = 7; //7+1 = 8
+
 //	TIM1->RCR = 0xFFFF; // Repetition counter value
 
+    // Enable the TIM1 interrupt
+    NVIC_EnableIRQ(TIM1_UP_TIM16_IRQn);
 
-
-//    // Enable the TIM1 interrupt
-//    NVIC_EnableIRQ(TIM1_CC_IRQHandler);
-//
-//    // Set priority for the TIM1 interrupt
-//    NVIC_SetPriority(TIM1_CC_IRQHandler, 5); // Adjust priority as needed
+    // Set priority for the TIM1 interrupt
+    NVIC_SetPriority(TIM1_UP_TIM16_IRQn, 5); // Adjust priority as needed
 
     // Enable the TIM1 counter
     TIM1->CR1 |= TIM_CR1_CEN;
@@ -550,15 +688,36 @@ void TIM2_configuration(void)
     // Configure TIM2
 	TIM2->CR1 |= TIM_CR1_ARPE; //ARPE: Auto-reload preload enable
 	TIM2->SMCR |= (TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0); // Encoder mode 3
+	TIM2->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
 
 	TIM2->CCMR1 |= (1<<0);
 	TIM2->CCMR1 |= (1<<8);
 	TIM2->CCER |= (1<<0);
 	TIM2->CCER |= (1<<4);
 
+	TIM2->PSC = 7; //7+1 = 8
+	TIM2->ARR = 0xFFFF; //65535
+
+    // Enable the TIM2 interrupt
+    NVIC_EnableIRQ(TIM2_IRQn);
+
+    // Set priority for the TIM2 interrupt
+    NVIC_SetPriority(TIM2_IRQn, 5); // Adjust priority as needed
 
     // Enable the TIM2 counter
     TIM2->CR1 |= TIM_CR1_CEN;
+}
+
+void TIM16_configuration(void)
+{
+	TIM16->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
+	TIM16->CR1 |= TIM_CR1_CEN;
+}
+
+void TIM17_configuration(void)
+{
+	TIM17->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
+	TIM17->CR1 |= TIM_CR1_CEN;
 }
 
 /* USER CODE END 4 */
@@ -588,17 +747,17 @@ void psMeasure(void const * argument)
     	memset(measureResult, ' ', sizeof(measureResult));
     	strcpy(measureResult, "Voltage > MAX");
     	xEventGroupClearBits(pc13EventGroup, 0xFFFFFF);
-    	xEventGroupSetBits(pc13EventGroup, 0x1);
+    	xEventGroupSetBits(pc13EventGroup, OVERVOLTAGEONLED);
     	xEventGroupClearBits(pc14EventGroup, 0xFFFFFF);
-    	xEventGroupSetBits(pc14EventGroup, 0x1);
+    	xEventGroupSetBits(pc14EventGroup, OVERVOLTAGEONLED);
     	__asm__ volatile("NOP");
     } else if(avrBatVoltage < BATMINV) {
     	memset(measureResult, ' ', sizeof(measureResult));
     	strcpy(measureResult, "Voltage < MIN");
     	xEventGroupClearBits(pc13EventGroup, 0xFFFFFF);
-    	xEventGroupSetBits(pc13EventGroup, 0x2);
+    	xEventGroupSetBits(pc13EventGroup, UNDERVOLTAGEONLED);
     	xEventGroupClearBits(pc14EventGroup, 0xFFFFFF);
-    	xEventGroupSetBits(pc14EventGroup, 0x2);
+    	xEventGroupSetBits(pc14EventGroup, UNDERVOLTAGEONLED);
     	__asm__ volatile("NOP");
     } else {
     	memset(measureResult, ' ', sizeof(measureResult));
@@ -627,19 +786,19 @@ void pc13LedCntrl(void const * argument)
     osDelay(1);
     eventBits = xEventGroupGetBits(pc13EventGroup);
     switch (eventBits) {
-		case 0x1:
+		case OVERVOLTAGEONLED:
 			osDelay(100);
 			GPIOC->ODR ^= GPIO_ODR_13;
 			__asm__ volatile("NOP");
 			break;
-		case 0x2:
+		case UNDERVOLTAGEONLED:
 			osDelay(200);
 			GPIOC->ODR ^= GPIO_ODR_13;
 			__asm__ volatile("NOP");
 			break;
 		default:
 			GPIOC->ODR &= ~GPIO_ODR_13;
-			osDelay(5);
+			osDelay(12);
 			__asm__ volatile("NOP");
 			break;
 	}
@@ -664,19 +823,19 @@ void pc14LedCntrl(void const * argument)
     osDelay(1);
     eventBits = xEventGroupGetBits(pc14EventGroup);
     switch (eventBits) {
-		case 0x1:
+		case OVERVOLTAGEONLED:
 			osDelay(100);
 			GPIOC->ODR ^= GPIO_ODR_14;
 			__asm__ volatile("NOP");
 			break;
-		case 0x2:
+		case UNDERVOLTAGEONLED:
 			osDelay(200);
 			GPIOC->ODR ^= GPIO_ODR_14;
 			__asm__ volatile("NOP");
 			break;
 		default:
 			GPIOC->ODR &= ~GPIO_ODR_14;
-			osDelay(5);
+			osDelay(12);
 			__asm__ volatile("NOP");
 			break;
 	}
@@ -695,6 +854,7 @@ void espCommunication(void const * argument)
 {
   /* USER CODE BEGIN espCommunication */
 	vTaskDelay( pdMS_TO_TICKS( 100 ) );
+	taskENTER_CRITICAL();
 	  GPIOB->ODR |= (1<<1);
 	  GPIOB->ODR |= (1<<2);
 	  char txBuffer[80] = {'A', 'T', '\r', '\n'};
@@ -704,8 +864,9 @@ void espCommunication(void const * argument)
 		  for(uint8_t i = 0; i < sizeof(rxBuffer); i++) {
 			  rxBuffer[i] = 0;
 		  }
-		  HAL_UART_Transmit(&huart3, txBuffer, sizeof(txBuffer), 250);
-		  HAL_UART_Receive(&huart3, rxBuffer, sizeof(rxBuffer), 250);
+		  HAL_UART_Transmit(&huart3, (uint8_t*)txBuffer, 4, 250);
+		  HAL_UART_Receive(&huart3, (uint8_t*)rxBuffer, sizeof(rxBuffer), 250);
+		  vTaskDelay( pdMS_TO_TICKS( 100 ) );
 		  __asm__ volatile("NOP");
 	  }
 	  sendATCommand(&huart3, "ATE0\r\n", 6 , rxBuffer, sizeof(rxBuffer), 250);
@@ -714,6 +875,7 @@ void espCommunication(void const * argument)
 	  strcpy(txBuffer, "AT+CWJAP_CUR=\"RedmiGiGidra\",\"DimaDimaDimon\"\r\n");
 	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer) , rxBuffer, sizeof(rxBuffer), 10000);
 	  vTaskDelay( pdMS_TO_TICKS( 2000 ) );
+	  taskEXIT_CRITICAL();
 	  __asm__ volatile("NOP");
 
   /* Infinite loop */
@@ -722,6 +884,167 @@ void espCommunication(void const * argument)
 	  vTaskDelay( pdMS_TO_TICKS( 100 ) );
   }
   /* USER CODE END espCommunication */
+}
+
+/* USER CODE BEGIN Header_encoderR */
+/**
+* @brief Function implementing the EncoderR thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_encoderR */
+void encoderR(void const * argument)
+{
+  /* USER CODE BEGIN encoderR */
+  /* Infinite loop */
+  for(;;)
+  {
+	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
+
+	  EncoderR.timeOld = EncoderR.timeNew;
+	  EncoderR.timeNew = TIM17->CNT;
+	  EncoderR.positionOld = EncoderR.positionNew;
+	  EncoderR.positionNew = TIM1->CNT;
+
+	  if(EncoderR.timeNew - EncoderR.timeOld == 0) {
+		  continue;
+	  }
+
+	  if (!EncoderR.posCntUpdate) {
+		  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(64*1000*60)/256;
+	  } else {
+		  if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
+			  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+		  } else {
+			  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+		  }
+		  EncoderR.posCntUpdate = 0;
+	  }
+//	  taskYIELD();
+	  __asm__ volatile("NOP");
+  }
+  /* USER CODE END encoderR */
+}
+
+/* USER CODE BEGIN Header_encoderL */
+/**
+* @brief Function implementing the EncoderL thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_encoderL */
+void encoderL(void const * argument)
+{
+  /* USER CODE BEGIN encoderL */
+  /* Infinite loop */
+  for(;;)
+  {
+	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
+
+	  EncoderL.timeOld = EncoderL.timeNew;
+	  EncoderL.timeNew = TIM17->CNT;
+	  EncoderL.positionOld = EncoderL.positionNew;
+	  EncoderL.positionNew = TIM2->CNT;
+
+	  if(EncoderL.timeNew - EncoderL.timeOld == 0) {
+		  continue;
+	  }
+
+	  if (!EncoderL.posCntUpdate) {
+		  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(64*1000*60)/256;
+	  } else {
+		  if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
+			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
+		  } else {
+			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
+		  }
+		  EncoderL.posCntUpdate = 0;
+	  }
+//	  taskYIELD();
+	  __asm__ volatile("NOP");
+  }
+  /* USER CODE END encoderL */
+}
+
+/* USER CODE BEGIN Header_softwarePWMR */
+/**
+* @brief Function implementing the SoftwarePwmR thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_softwarePWMR */
+void softwarePWMR(void const * argument)
+{
+  /* USER CODE BEGIN softwarePWMR */
+	int errorValue = 0;
+	float sumValue = 0;
+	float pValue = 0;
+	float iValue = 0;
+	float pwmFloatValue = 0;
+	vTaskDelay( pdMS_TO_TICKS( 10 ) );
+	GPIOA->ODR |= (1<<6); //EN34
+
+	SoftPwmR.reqValue = 8000;
+  /* Infinite loop */
+  for(;;)
+  {
+	  SoftPwmR.curValue = EncoderR.rpm;
+	  errorValue = SoftPwmR.reqValue - SoftPwmR.curValue;
+	  pValue = KP * errorValue;
+	  iValue += KI * errorValue;
+	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
+	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
+	  sumValue = (pValue + iValue);
+	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
+	  SoftPwmR.pwmValue = (int16_t)pwmFloatValue;
+	  if(SoftPwmR.pwmValue > 100) SoftPwmR.pwmValue = 100;
+	  else if(SoftPwmR.pwmValue < -100) SoftPwmR.pwmValue = -100;
+//		GPIOA->ODR |= (1<<6); //EN34
+//		GPIOA->ODR &= ~(1<<7); //_3A
+//		GPIOB->ODR |= (1<<0); //_4A
+//	  taskYIELD();
+	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
+  }
+  /* USER CODE END softwarePWMR */
+}
+
+/* USER CODE BEGIN Header_softwarePWML */
+/**
+* @brief Function implementing the SoftwarePwmL thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_softwarePWML */
+void softwarePWML(void const * argument)
+{
+  /* USER CODE BEGIN softwarePWML */
+	int errorValue = 0;
+	float sumValue = 0;
+	float pValue = 0;
+	float iValue = 0;
+	float pwmFloatValue = 0;
+	vTaskDelay( pdMS_TO_TICKS( 10 ) );
+	GPIOA->ODR |= (1<<3); //EN12
+
+	SoftPwmL.reqValue = 8000;
+  /* Infinite loop */
+  for(;;)
+  {
+	  SoftPwmL.curValue = EncoderL.rpm;
+	  errorValue = SoftPwmL.reqValue - SoftPwmL.curValue;
+	  pValue = KP * errorValue;
+	  iValue += KI * errorValue;
+	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
+	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
+	  sumValue = (pValue + iValue);
+	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
+	  SoftPwmL.pwmValue = (int16_t)pwmFloatValue;
+	  if(SoftPwmL.pwmValue > 100) SoftPwmL.pwmValue = 100;
+	  else if(SoftPwmL.pwmValue < -100) SoftPwmL.pwmValue = -100;
+
+	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
+  }
+  /* USER CODE END softwarePWML */
 }
 
 /**
