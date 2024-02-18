@@ -1,1 +1,5 @@
-../Core/Src/espATcommands.c:11:6:sendATCommand	32	static
+../Core/Src/espATcommands.c:28:6:sendATCommand	32	static
+../Core/Src/espATcommands.c:38:6:receiveAnswer	32	static
+../Core/Src/espATcommands.c:46:6:atCipclose	40	static
+../Core/Src/espATcommands.c:52:6:atCipclose_DMA	40	static,ignoring_inline_asm
+../Core/Src/espATcommands.c:60:9:atSend_USART3_DMA	16	static

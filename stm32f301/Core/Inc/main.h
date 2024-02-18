@@ -101,8 +101,11 @@ void Error_Handler(void);
 #define UNDERVOLTAGEONLED 0x2
 #define KP 0.002f
 #define KI  0.0f   //0.0001f
-#define MAXRPM 8000
+#define MAXRPM 12500
 #define ENCDELAY 8
+#define ESPBUFFERSIZE 511
+#define IPSERVER "127.16.19.7"
+#define PORTSERVER "8080"
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

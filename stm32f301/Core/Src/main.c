@@ -51,6 +51,8 @@ TIM_HandleTypeDef htim16;
 TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_rx;
+DMA_HandleTypeDef hdma_usart3_tx;
 
 osThreadId PS_MeasureHandle;
 osThreadId PC_13_LEDHandle;
@@ -61,7 +63,8 @@ osThreadId EncoderLHandle;
 osThreadId SoftwarePwmRHandle;
 osThreadId SoftwarePwmLHandle;
 /* USER CODE BEGIN PV */
-uint16_t batteryVoltage[10]; // Battery voltage.
+volatile uint16_t batteryVoltage[10]; // Battery voltage.
+uint16_t avrBatVoltage;
 EventGroupHandle_t pc13EventGroup;
 EventGroupHandle_t pc14EventGroup;
 
@@ -71,11 +74,19 @@ struct SoftPWM SoftPwmR, SoftPwmL;
 float kToRpm;
 
 uint16_t softCounterValue;
+
+char txBuffer[ESPBUFFERSIZE];
+volatile char rxBuffer[ESPBUFFERSIZE];
+volatile uint16_t rxBufferHead;
+
+TimerHandle_t timerForDataSending;
+EventGroupHandle_t timerFdsEventGroup;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART3_UART_Init(void);
@@ -94,8 +105,11 @@ void softwarePWML(void const * argument);
 void ADC1_configuration(void);
 void TIM1_configuration(void);
 void TIM2_configuration(void);
-void TIM16_configuration(void);
-void TIM17_configuration(void);
+void TIM16_additional_configuration(void);
+void TIM17_additional_configuration(void);
+void USART3_additional_configuration(void);
+
+void timerForSendDataCallback(TimerHandle_t xTimer);
 
 /* USER CODE END PFP */
 
@@ -111,6 +125,8 @@ void TIM17_configuration(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	avrBatVoltage = 0;
+
 	EncoderR.timeNew = 0;
 	EncoderR.timeOld = 0;
 	EncoderR.positionNew = 0;
@@ -139,6 +155,10 @@ int main(void)
 
 	softCounterValue = 0;
 
+	memset(txBuffer, '\0', sizeof(txBuffer));
+	memset(rxBuffer, '\0', sizeof(rxBuffer));
+	rxBufferHead = 0;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -159,6 +179,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_SPI2_Init();
   MX_USART3_UART_Init();
@@ -168,13 +189,15 @@ int main(void)
   ADC1_configuration();
   TIM1_configuration();
   TIM2_configuration();
-  TIM17_configuration();
-  TIM16_configuration();
+  TIM17_additional_configuration();
+  TIM16_additional_configuration();
+  USART3_additional_configuration();
 
-  kToRpm = (64*1000*60)/256;
+  kToRpm = (32*1000*60)/256;
 
   pc13EventGroup = xEventGroupCreate();
   pc14EventGroup = xEventGroupCreate();
+  timerFdsEventGroup = xEventGroupCreate();
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -187,6 +210,8 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
+  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(500), pdTRUE, 1, timerForSendDataCallback);
+  xTimerStart(timerForDataSending, portMAX_DELAY);
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -207,7 +232,7 @@ int main(void)
   PC_14_LEDHandle = osThreadCreate(osThread(PC_14_LED), NULL);
 
   /* definition and creation of EspCommunication */
-  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 256);
+  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 300);
   EspCommunicationHandle = osThreadCreate(osThread(EspCommunication), NULL);
 
   /* definition and creation of EncoderR */
@@ -439,7 +464,7 @@ static void MX_TIM17_Init(void)
 
   /* USER CODE END TIM17_Init 1 */
   htim17.Instance = TIM17;
-  htim17.Init.Prescaler = 999;
+  htim17.Init.Prescaler = 1999;
   htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim17.Init.Period = 65535;
   htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -487,6 +512,25 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+  /* DMA1_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 
@@ -708,16 +752,59 @@ void TIM2_configuration(void)
     TIM2->CR1 |= TIM_CR1_CEN;
 }
 
-void TIM16_configuration(void)
+void TIM16_additional_configuration(void)
 {
 	TIM16->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
 	TIM16->CR1 |= TIM_CR1_CEN;
 }
 
-void TIM17_configuration(void)
+void TIM17_additional_configuration(void)
 {
 	TIM17->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
 	TIM17->CR1 |= TIM_CR1_CEN;
+}
+
+void USART3_additional_configuration(void)
+{
+	//DMA configuration for UART3
+	RCC->AHBENR |= RCC_AHBENR_DMA1EN; // Enable the DMA1 clock
+
+	DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+
+	DMA1_Channel3->CCR |= DMA_CCR_MINC;
+	DMA1_Channel3->CCR |= DMA_CCR_CIRC;
+//		DMA1_Channel3->CCR |= DMA_CCR_TCIE;
+	DMA1_Channel3->CCR &= ~DMA_CCR_TCIE;
+	DMA1_Channel3->CCR &= ~DMA_CCR_HTIE;
+	DMA1_Channel3->CCR &= ~DMA_CCR_TEIE;
+
+	DMA1_Channel3->CNDTR = ESPBUFFERSIZE;
+	DMA1_Channel3->CPAR = (uint32_t)&(USART3->RDR);
+	DMA1_Channel3->CMAR = (uint32_t)&rxBuffer[0];
+
+	USART3->CR3 &= ~USART_CR3_DMAR;
+	DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+
+	DMA1_Channel2->CCR &= ~DMA_CCR_EN;
+
+	DMA1_Channel2->CCR |= DMA_CCR_MINC;
+	DMA1_Channel2->CCR &= ~DMA_CCR_CIRC;
+	DMA1_Channel2->CCR |= DMA_CCR_DIR;
+	DMA1_Channel2->CCR |= DMA_CCR_TCIE;
+	DMA1_Channel2->CCR &= ~DMA_CCR_HTIE;
+	DMA1_Channel2->CCR &= ~DMA_CCR_TEIE;
+
+	DMA1_Channel2->CNDTR = 0;
+	DMA1_Channel2->CPAR = (uint32_t)&(USART3->TDR);
+	DMA1_Channel2->CMAR = (uint32_t)&txBuffer[0];
+
+	USART3->CR3 &= ~USART_CR3_DMAT;
+	DMA1_Channel2->CCR &= ~DMA_CCR_EN;
+}
+
+void timerForSendDataCallback(TimerHandle_t xTimer)
+{
+	xEventGroupSetBits(timerFdsEventGroup, 0x1);
 }
 
 /* USER CODE END 4 */
@@ -738,7 +825,7 @@ void psMeasure(void const * argument)
   for(;;)
   {
     osDelay(8);
-    uint16_t avrBatVoltage = 0;
+
     for(uint8_t i = 0; i < (sizeof(batteryVoltage)/sizeof(batteryVoltage[0])); i++) {
     	avrBatVoltage += batteryVoltage[i];
     }
@@ -857,11 +944,13 @@ void espCommunication(void const * argument)
 	taskENTER_CRITICAL();
 	  GPIOB->ODR |= (1<<1);
 	  GPIOB->ODR |= (1<<2);
-	  char txBuffer[80] = {'A', 'T', '\r', '\n'};
-	  char rxBuffer[80];
+	  txBuffer[0] = 'A';
+	  txBuffer[1] = 'T';
+	  txBuffer[2] = '\r';
+	  txBuffer[3] = '\n';
 	  char controlAnsw[] = "AT\r\r\n\r\nOK\r\n";
 	  while(strcmp(rxBuffer, controlAnsw) != 0) {
-		  for(uint8_t i = 0; i < sizeof(rxBuffer); i++) {
+		  for(uint16_t i = 0; i < sizeof(rxBuffer); i++) {
 			  rxBuffer[i] = 0;
 		  }
 		  HAL_UART_Transmit(&huart3, (uint8_t*)txBuffer, 4, 250);
@@ -869,19 +958,92 @@ void espCommunication(void const * argument)
 		  vTaskDelay( pdMS_TO_TICKS( 100 ) );
 		  __asm__ volatile("NOP");
 	  }
-	  sendATCommand(&huart3, "ATE0\r\n", 6 , rxBuffer, sizeof(rxBuffer), 250);
-	  sendATCommand(&huart3, "AT+CWMODE=1\r\n", 13 , rxBuffer, sizeof(rxBuffer), 250);
+
+	  sendATCommand(&huart3, "AT+CWMODE_CUR=1\r\n", 17 , 250);
+	  receiveAnswer(&huart3, rxBuffer, sizeof(rxBuffer), 250);
+
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  strcpy(txBuffer, "AT+CWJAP_CUR=\"RedmiGiGidra\",\"DimaDimaDimon\"\r\n");
-	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer) , rxBuffer, sizeof(rxBuffer), 10000);
+	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 1000);
+	  receiveAnswer(&huart3, rxBuffer, sizeof(rxBuffer), 10000);
+
+	  USART3->CR3 |= USART_CR3_DMAR;
+	  DMA1_Channel3->CCR |= DMA_CCR_EN; //Starting continuous DMA on RX
+
 	  vTaskDelay( pdMS_TO_TICKS( 2000 ) );
+
+	  memset(txBuffer, '\0', sizeof(txBuffer));
+	  strcpy(txBuffer, "AT+CIPCLOSE\r\n");
+	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
+	  vTaskDelay( pdMS_TO_TICKS( 250 ) );
+
+	  memset(txBuffer, '\0', sizeof(txBuffer));
+	  strcpy(txBuffer, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
+	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
+	  vTaskDelay( pdMS_TO_TICKS( 250 ) );
+
 	  taskEXIT_CRITICAL();
 	  __asm__ volatile("NOP");
 
   /* Infinite loop */
   for(;;)
   {
-	  vTaskDelay( pdMS_TO_TICKS( 100 ) );
+	  // Calculate the number of bytes received since the last processing
+	  uint8_t receivedBytes = (ESPBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPBUFFERSIZE;
+
+	  // Process the received data
+      for (uint8_t i = 0; i < receivedBytes; i++) {
+
+    	  __asm__ volatile("NOP");
+      }
+
+      // Update the buffer head index
+      rxBufferHead = ((rxBufferHead + receivedBytes) % ESPBUFFERSIZE);
+
+      if(xEventGroupGetBitsFromISR(timerFdsEventGroup) == 0x1) {
+    	    // Create the JSON content with variable values
+    	    char jsonContent[150];
+    	    sprintf(jsonContent, "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\"}", avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue);
+
+    	    // Create the entire POST request string
+    	    char postRequest[400];
+    	    sprintf(postRequest, "POST / HTTP/1.1\r\n"
+    	                         "Host: 192.168.137.1\r\n"
+    	                         "Content-Type: application/json\r\n"
+    	                         "Content-Length: %d\r\n\r\n"
+    	                         "%s",
+    	                          (int)strlen(jsonContent), jsonContent);
+
+    	    // Calculate the number of characters in the POST request
+    	    int postRequestLength = strlen(postRequest);
+
+//    	  char pData[] = "GET / HTTP/1.1\r\nHost: 192.168.137.1:8080\r\n\r\n";
+//    	  int d = sizeof(pData)-1;
+    	  uint8_t char_number = 0;
+//    	  int temp = d;
+    	  int temp = postRequestLength;
+    	  while(temp != 0){
+    	  temp = temp / 10;
+    	  char_number++;
+    	  }
+
+
+    	  char pData2[13+char_number];
+//    	  sprintf(pData2, "AT+CIPSEND=%d\r\n", d);
+    	  sprintf(pData2, "AT+CIPSEND=%d\r\n", postRequestLength);
+    	  while(atSend_USART3_DMA(pData2, sizeof(pData2)) != 0) {
+    	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
+    	  }
+//    	  while(atSend_USART3_DMA(pData, sizeof(pData)-1) != 0) {
+//    	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
+//    	  }
+    	  while(atSend_USART3_DMA(postRequest, postRequestLength) != 0) {
+    	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
+    	  }
+    	  xEventGroupClearBits(timerFdsEventGroup, 0xFFFFFF);
+      }
+
+	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
   }
   /* USER CODE END espCommunication */
 }
@@ -911,7 +1073,7 @@ void encoderR(void const * argument)
 	  }
 
 	  if (!EncoderR.posCntUpdate) {
-		  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(64*1000*60)/256;
+		  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
 	  } else {
 		  if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
 			  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
@@ -941,6 +1103,10 @@ void encoderL(void const * argument)
   {
 	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
 
+	  if(TIM2->CNT > TIM2->ARR) {
+		  TIM2->EGR |= TIM_EGR_UG;
+	  }
+
 	  EncoderL.timeOld = EncoderL.timeNew;
 	  EncoderL.timeNew = TIM17->CNT;
 	  EncoderL.positionOld = EncoderL.positionNew;
@@ -951,7 +1117,7 @@ void encoderL(void const * argument)
 	  }
 
 	  if (!EncoderL.posCntUpdate) {
-		  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(64*1000*60)/256;
+		  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(32*1000*60)/256;
 	  } else {
 		  if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
 			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
@@ -1026,7 +1192,7 @@ void softwarePWML(void const * argument)
 	vTaskDelay( pdMS_TO_TICKS( 10 ) );
 	GPIOA->ODR |= (1<<3); //EN12
 
-	SoftPwmL.reqValue = 8000;
+	SoftPwmL.reqValue = 6000;
   /* Infinite loop */
   for(;;)
   {
@@ -1038,6 +1204,8 @@ void softwarePWML(void const * argument)
 	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
 	  sumValue = (pValue + iValue);
 	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
+	  if(pwmFloatValue > 100) pwmFloatValue = 100;
+	  else if(pwmFloatValue < -100) pwmFloatValue = -100;
 	  SoftPwmL.pwmValue = (int16_t)pwmFloatValue;
 	  if(SoftPwmL.pwmValue > 100) SoftPwmL.pwmValue = 100;
 	  else if(SoftPwmL.pwmValue < -100) SoftPwmL.pwmValue = -100;

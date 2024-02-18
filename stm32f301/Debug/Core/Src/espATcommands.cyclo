@@ -1,1 +1,5 @@
-../Core/Src/espATcommands.c:11:6:sendATCommand	4
+../Core/Src/espATcommands.c:28:6:sendATCommand	3
+../Core/Src/espATcommands.c:38:6:receiveAnswer	2
+../Core/Src/espATcommands.c:46:6:atCipclose	1
+../Core/Src/espATcommands.c:52:6:atCipclose_DMA	1
+../Core/Src/espATcommands.c:60:9:atSend_USART3_DMA	5
