@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Controller</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const sendRequestButton = document.getElementById('sendRequestButton');
+            const responseText = document.getElementById('responseText');
+            const avrBatVoltageSpan = document.getElementById('avrBatVoltage');
+            const encoderRRpmSpan = document.getElementById('encoderRRpm');
+            const encoderLRpmSpan = document.getElementById('encoderLRpm');
+            const softPwmRValueSpan = document.getElementById('softPwmRValue');
+            const softPwmLValueSpan = document.getElementById('softPwmLValue');
+
+            // Function to update spans with received data
+            function updateSpans(data) {
+                avrBatVoltageSpan.textContent = data.avrBatVoltage || 'N/A';
+                encoderRRpmSpan.textContent = data.encoderRRpm || 'N/A';
+                encoderLRpmSpan.textContent = data.encoderLRpm || 'N/A';
+                softPwmRValueSpan.textContent = data.softPwmRValue || 'N/A';
+                softPwmLValueSpan.textContent = data.softPwmLValue || 'N/A';
+            }
+
+            // Function to continuously send GET request
+            function fetchData() {
+                axios.get('http://192.168.137.1:8080/data_from_robot')  // Update the correct endpoint
+                    .then(response => {
+                        updateSpans(response.data);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        // Handle error if needed
+                    })
+                    .finally(() => {
+                        // Repeat after a certain interval (adjust as needed)
+                        setTimeout(fetchData, 250);
+                    });
+            }
+
+            sendRequestButton.addEventListener('click', function () {
+                // Perform a GET request using Axios
+                axios.get('http://192.168.137.1:8080/home') // Replace 'YOUR_API_ENDPOINT' with the actual API endpoint
+                    .then(response => {
+                        // Display the received text in the span
+                        responseText.textContent = response.data;
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        responseText.textContent = 'Error occurred while fetching data.';
+                    });
+            });
+
+            // Start fetching data when the page loads
+            fetchData();
+        });
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+        }
+
+        header {
+            font-size: 32px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        span {
+            margin-top: 10px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>Robot Controller</header>
+    <button id="sendRequestButton">Send GET Request</button>
+    <span id="responseText"></span>
+    <div>
+        <label>Battery Voltage: </label><span id="avrBatVoltage"></span><br>
+        <label>Right Encoder RPM: </label><span id="encoderRRpm"></span><br>
+        <label>Left Encoder RPM: </label><span id="encoderLRpm"></span><br>
+        <label>Right Motor PWM: </label><span id="softPwmRValue"></span><br>
+        <label>Left Motor PWM: </label><span id="softPwmLValue"></span>
+    </div>
+</body>
+
+</html>

@@ -6,22 +6,32 @@
 #include <vector>
 #include <fstream>
 #include <chrono>
+#include <atomic>
+#include <unordered_map>
+#include <fstream>
 
 void CleanupThreads(std::vector<std::thread>& threads);
 int sendResponse(SOCKET clientSocket, const std::string& response);
 void HandleClient(SOCKET clientSocket);
-void ReceiveData(SOCKET clientSocket);
+void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId);
 void SendData(SOCKET clientSocket);
 void writeStringToFile(const std::string& filename, const std::string& data);
 std::string readStringFromFile(const std::string& filename);
+void sleep_for(std::chrono::milliseconds duration);
+void SendHtmlFile(SOCKET clientSocket, const std::string& filename);
 
 std::vector<std::thread> threads;
+// std::unordered_map<std::thread::id, std::atomic<bool>> threadFlags;
+std::unordered_map<std::thread::id, uint8_t> threadFlags;
 
-int rpmR = 0;
-int rpmL = 0;
+std::string avrBatVoltage;
+std::string encoderRRpm;
+std::string encoderLRpm;
+std::string softPwmRValue;
+std::string softPwmLValue;
+
 
 int main() {
-    
 
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -99,7 +109,7 @@ void CleanupThreads(std::vector<std::thread>& threads) {
         // Iterate over the vector and join finished threads
         auto it = threads.begin();
         while (it != threads.end()) {
-            if (it->joinable()) {
+            if ((threadFlags[it->get_id()] & (1<<1)) == (1<<1)) {
                 it->join();
                 it = threads.erase(it);
             } else {
@@ -110,17 +120,39 @@ void CleanupThreads(std::vector<std::thread>& threads) {
 }
 
 void HandleClient(SOCKET clientSocket) {
-    std::thread recvThread(ReceiveData, clientSocket);
-    std::thread sendThread(SendData, clientSocket);
+    std::cout << "\033[36mHandleClient start\033[0m" << std::endl;
+
+    // Create a new thread-specific flag for each client thread
+    threadFlags[std::this_thread::get_id()] = 0;
+
+
+    std::thread::id thisThreadId = std::this_thread::get_id();
+    std::thread recvThread(ReceiveData, clientSocket, thisThreadId);
+
+    // Sleep for 3000 milliseconds (3 seconds)
+    std::cout << "\033[36mSleeping for 3000 ms\033[0m" << std::endl;
+    sleep_for(std::chrono::milliseconds(1000));
+
+    // Check the flag and start sendThread if needed
+    std::cout << "\033[36mChecking startSendThread flag\033[0m" << std::endl;
+    if ((threadFlags[thisThreadId] & 0x1) == 0x1) {
+        std::cout << "\033[36mstartSendThread flag is true, starting sendThread\033[0m" << std::endl;
+        std::thread sendThread(SendData, clientSocket);
+
+        sendThread.join();
+    } else {
+        std::cout << "\033[36mstartSendThread flag is false, not starting sendThread\033[0m" << std::endl;
+    }
 
     recvThread.join();
-    sendThread.join();
 
-    std::cout << "Number of threads in vector threads " << threads.size() << std::endl;
+    std::cout << "\033[36mNumber of threads in vector threads " << threads.size() << "\033[0m" << std::endl;
     closesocket(clientSocket);
+    std::cout << "\033[36mHandleClient end\033[0m" << std::endl;
+    threadFlags[thisThreadId] |= (1<<1);
 }
 
-void ReceiveData(SOCKET clientSocket) {
+void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
     while(true) {
         char buff[30720] = { 0 };
         int bytes = recv(clientSocket, buff, sizeof(buff), 0);
@@ -144,7 +176,7 @@ void ReceiveData(SOCKET clientSocket) {
             // Parse the request and send a response as before.
             // ...
                 // Check if it's a GET request
-            if (strstr(buff, "GET") != NULL) {
+            if (strstr(buff, "GET /home") != NULL) {
                 // Handle GET request
                 std::string response = readStringFromFile("example.txt");
                 // Calculate the content length based on the response
@@ -152,6 +184,27 @@ void ReceiveData(SOCKET clientSocket) {
                 // Construct the complete response with dynamic Content-Length
                 std::string httpResponse = "HTTP/1.1 200 OK\nContent-Type: text/html\n" + contentLengthHeader + "\n" + response;
 
+                sendResponse(clientSocket, httpResponse);
+            } else if(strstr(buff, "GET /app") != NULL) {
+                SendHtmlFile(clientSocket, "index.html");
+            } else if(strstr(buff, "GET /robot HTTP/1.1\r\nHost: 192.168.137.1") != NULL) {
+                // Set the flag to start sendThread
+                threadFlags[ThreadId] |= 0x1;
+
+                std::string response = "robot_okay";
+                sendResponse(clientSocket, response);
+            } else if(strstr(buff, "GET /data_from_robot") != NULL){
+                // Respond with the current values of the global variables
+                std::string responseData = "{"
+                    "\"avrBatVoltage\": " + avrBatVoltage + ","
+                    "\"encoderRRpm\": " + encoderRRpm + ","
+                    "\"encoderLRpm\": " + encoderLRpm + ","
+                    "\"softPwmRValue\": " + softPwmRValue + ","
+                    "\"softPwmLValue\": " + softPwmLValue +
+                    "}";
+                std::cout << "Response Data: " << responseData << std::endl;  // Debug output
+                std::string contentLengthHeader = "Content-Length: " + std::to_string(responseData.length()) + "\n";
+                std::string httpResponse = "HTTP/1.1 200 OK\nContent-Type: application/json\n" + contentLengthHeader + "\n" + responseData;
                 sendResponse(clientSocket, httpResponse);
             } else if (strstr(buff, "POST") != NULL) {
                 // Find the start of the JSON content
@@ -173,6 +226,7 @@ void ReceiveData(SOCKET clientSocket) {
                             if (avrBatVoltageEnd != std::string::npos) {
                                 std::string avrBatVoltageValue = jsonContent.substr(avrBatVoltagePos + 16, avrBatVoltageEnd - (avrBatVoltagePos + 16));
                                 std::cout << "\033[32mavrBatVoltage: " << avrBatVoltageValue << "\033[0m" << std::endl;
+                                avrBatVoltage = avrBatVoltageValue;
                             }
                         }
 
@@ -182,6 +236,7 @@ void ReceiveData(SOCKET clientSocket) {
                             if (encoderRRpmEnd != std::string::npos) {
                                 std::string encoderRRpmValue = jsonContent.substr(encoderRRpmPos + 15, encoderRRpmEnd - (encoderRRpmPos + 15));
                                 std::cout << "\033[31mEncoderR.rpm: " << encoderRRpmValue << "\033[0m" << std::endl;
+                                encoderRRpm = encoderRRpmValue;
                             }
                         }
 
@@ -191,6 +246,7 @@ void ReceiveData(SOCKET clientSocket) {
                             if (encoderLRpmEnd != std::string::npos) {
                                 std::string encoderLRpmValue = jsonContent.substr(encoderLRpmPos + 15, encoderLRpmEnd - (encoderLRpmPos + 15));
                                 std::cout << "\033[33mEncoderL.rpm: " << encoderLRpmValue << "\033[0m" << std::endl;
+                                encoderLRpm = encoderLRpmValue;
                             }
                         }
 
@@ -200,6 +256,7 @@ void ReceiveData(SOCKET clientSocket) {
                             if (softPwmRPwmValueEnd != std::string::npos) {
                                 std::string softPwmRPwmValue = jsonContent.substr(softPwmRPwmValuePos + 20, softPwmRPwmValueEnd - (softPwmRPwmValuePos + 20));
                                 std::cout << "\033[31mSoftPwmR.pwmValue: " << softPwmRPwmValue << "\033[0m" << std::endl;
+                                softPwmRValue = softPwmRPwmValue;
                             }
                         }
 
@@ -209,6 +266,7 @@ void ReceiveData(SOCKET clientSocket) {
                             if (softPwmLPwmValueEnd != std::string::npos) {
                                 std::string softPwmLPwmValue = jsonContent.substr(softPwmLPwmValuePos + 20, softPwmLPwmValueEnd - (softPwmLPwmValuePos + 20));
                                 std::cout << "\033[33mSoftPwmL.pwmValue: " << softPwmLPwmValue << "\033[0m" << std::endl;
+                                softPwmLValue = softPwmLPwmValue;
                             }
                         }
                     }
@@ -219,6 +277,9 @@ void ReceiveData(SOCKET clientSocket) {
                 response += "<html><h1>Not Implemented</h1></html>";
                 sendResponse(clientSocket, response);
             }
+        }
+        if((threadFlags[ThreadId] & 0x1) != 0x1) {
+            break;
         }
     }
 }
@@ -240,7 +301,7 @@ int sendResponse(SOCKET clientSocket, const std::string& response) {
     while (totalBytesSent < response.size()) {
         bytesSent = send(clientSocket, response.c_str() + totalBytesSent, response.size() - totalBytesSent, 0);
         if (bytesSent <= 0) {
-            std::cout << "Could not send response";
+            std::cout << "Could not send response" << std::endl;
             return 1;
         }
         totalBytesSent += bytesSent;
@@ -277,4 +338,36 @@ std::string readStringFromFile(const std::string& filename) {
         std::cerr << "Error: Unable to open file for reading." << std::endl;
     }
     return content;
+}
+
+// Function to sleep for a specified duration using steady_clock
+void sleep_for(std::chrono::milliseconds duration) {
+    auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - start < duration) {
+        std::this_thread::yield();  // Allow other threads to run
+    }
+}
+
+// Implementation of SendHtmlFile function
+void SendHtmlFile(SOCKET clientSocket, const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+
+    if (!file.is_open()) {
+        std::string response = "HTTP/1.1 404 Not Found\nContent-Type: text/html\nContent-Length: 21\n\n<html><h1>404 Not Found</h1></html>";
+        sendResponse(clientSocket, response);
+        return;
+    }
+
+    // Read the content of the HTML file
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    // Calculate the content length based on the file size
+    std::string contentLengthHeader = "Content-Length: " + std::to_string(content.size()) + "\n";
+
+    // Construct the complete response with dynamic Content-Length
+    std::string httpResponse = "HTTP/1.1 200 OK\nContent-Type: text/html\n" + contentLengthHeader + "\n" + content;
+
+    // Send the response to the client
+    sendResponse(clientSocket, httpResponse);
 }

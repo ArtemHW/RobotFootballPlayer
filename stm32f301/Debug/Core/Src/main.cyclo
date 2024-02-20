@@ -19,10 +19,10 @@
 ../Core/Src/main.c:819:6:psMeasure	4
 ../Core/Src/main.c:866:6:pc13LedCntrl	3
 ../Core/Src/main.c:903:6:pc14LedCntrl	3
-../Core/Src/main.c:940:6:espCommunication	8
-../Core/Src/main.c:1058:6:encoderR	5
-../Core/Src/main.c:1098:6:encoderL	6
-../Core/Src/main.c:1142:6:softwarePWMR	5
-../Core/Src/main.c:1184:6:softwarePWML	7
-../Core/Src/main.c:1226:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/main.c:1243:6:Error_Handler	1
+../Core/Src/main.c:940:6:espCommunication	9
+../Core/Src/main.c:1078:6:encoderR	5
+../Core/Src/main.c:1118:6:encoderL	6
+../Core/Src/main.c:1162:6:softwarePWMR	5
+../Core/Src/main.c:1204:6:softwarePWML	7
+../Core/Src/main.c:1246:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/main.c:1263:6:Error_Handler	1

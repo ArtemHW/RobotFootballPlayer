@@ -967,6 +967,9 @@ void espCommunication(void const * argument)
 	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 1000);
 	  receiveAnswer(&huart3, rxBuffer, sizeof(rxBuffer), 10000);
 
+	  taskEXIT_CRITICAL();
+
+	  memset(rxBuffer, '\0', sizeof(rxBuffer));
 	  USART3->CR3 |= USART_CR3_DMAR;
 	  DMA1_Channel3->CCR |= DMA_CCR_EN; //Starting continuous DMA on RX
 
@@ -980,9 +983,26 @@ void espCommunication(void const * argument)
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  strcpy(txBuffer, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
 	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
-	  vTaskDelay( pdMS_TO_TICKS( 250 ) );
+	  vTaskDelay( pdMS_TO_TICKS( 600 ) );
 
-	  taskEXIT_CRITICAL();
+	  memset(txBuffer, '\0', sizeof(txBuffer));
+		// Create the entire GET request string
+		sprintf(txBuffer, "GET /robot HTTP/1.1\r\n"
+						  "Host: 192.168.137.1\r\n");
+		int getRequestLength = strlen(txBuffer);
+  	  uint8_t char_number_get = 0;
+  	  int temp_get = getRequestLength;
+  	  while(temp_get != 0){
+  		  temp_get = temp_get / 10;
+  		  char_number_get++;
+  	  }
+  	  char pDataBuf[13+char_number_get];
+  	  sprintf(pDataBuf, "AT+CIPSEND=%d\r\n", getRequestLength);
+	  sendATCommand(&huart3, pDataBuf, sizeof(pDataBuf), 250);
+	  vTaskDelay( pdMS_TO_TICKS( 10 ) );
+	  sendATCommand(&huart3, txBuffer, getRequestLength, 250);
+	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
+
 	  __asm__ volatile("NOP");
 
   /* Infinite loop */
