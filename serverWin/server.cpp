@@ -29,6 +29,8 @@ std::string encoderRRpm;
 std::string encoderLRpm;
 std::string softPwmRValue;
 std::string softPwmLValue;
+std::string joyX;
+std::string joyY;
 
 
 int main() {
@@ -130,8 +132,8 @@ void HandleClient(SOCKET clientSocket) {
     std::thread recvThread(ReceiveData, clientSocket, thisThreadId);
 
     // Sleep for 3000 milliseconds (3 seconds)
-    std::cout << "\033[36mSleeping for 3000 ms\033[0m" << std::endl;
-    sleep_for(std::chrono::milliseconds(1000));
+    std::cout << "\033[36mSleeping for x ms\033[0m" << std::endl;
+    sleep_for(std::chrono::milliseconds(350));
 
     // Check the flag and start sendThread if needed
     std::cout << "\033[36mChecking startSendThread flag\033[0m" << std::endl;
@@ -206,7 +208,7 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                 std::string contentLengthHeader = "Content-Length: " + std::to_string(responseData.length()) + "\n";
                 std::string httpResponse = "HTTP/1.1 200 OK\nContent-Type: application/json\n" + contentLengthHeader + "\n" + responseData;
                 sendResponse(clientSocket, httpResponse);
-            } else if (strstr(buff, "POST") != NULL) {
+            } else if (strstr(buff, "POST /robot_data") != NULL) {
                 // Find the start of the JSON content
                 const char* jsonStart = strstr(buff, "{");
                 if (jsonStart != NULL) {
@@ -269,6 +271,44 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                                 softPwmLValue = softPwmLPwmValue;
                             }
                         }
+                    }
+                }
+            } else if(strstr(buff, "POST /joystick_data") != NULL) {
+                // Find the start of the JSON content
+                const char* jsonStart = strstr(buff, "{");
+                if (jsonStart != NULL) {
+                    // Find the end of the JSON content
+                    const char* jsonEnd = strstr(buff, "}");
+                    if (jsonEnd != NULL) {
+                        // Calculate the length of the JSON content
+                        size_t jsonLength = jsonEnd - jsonStart + 1;
+
+                        // Extract the JSON content
+                        std::string jsonContent(jsonStart, jsonLength);
+
+                        // Search for variable names and extract values
+                        size_t joyXPos = jsonContent.find("\"joy3X\":");
+                        if (joyXPos != std::string::npos) {
+                            size_t joyXEnd = jsonContent.find(",", joyXPos);
+                            if (joyXEnd != std::string::npos) {
+                                std::string joyXValue = jsonContent.substr(joyXPos + 9, joyXEnd-1 - (joyXPos + 9));
+                                joyX = joyXValue;
+                                std::cout << "\033[32mjoyX: " << joyX << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t joyYPos = jsonContent.find("\"joy3Y\":");
+                        if (joyYPos != std::string::npos) {
+                            size_t joyYEnd = jsonContent.find("}", joyYPos);
+                            if (joyYEnd != std::string::npos) {
+                                std::string joyYValue = jsonContent.substr(joyYPos + 9, joyYEnd-1 - (joyYPos + 9));
+                                joyY = joyYValue;
+                                std::cout << "\033[32mjoyY: " << joyY << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        std::string response = "HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 2\n\nOK";
+                        sendResponse(clientSocket, response);
                     }
                 }
             } else {
