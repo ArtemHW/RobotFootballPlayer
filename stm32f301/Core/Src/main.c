@@ -81,6 +81,9 @@ volatile uint16_t rxBufferHead;
 
 TimerHandle_t timerForDataSending;
 EventGroupHandle_t timerFdsEventGroup;
+
+int8_t joyX;
+int8_t joyY;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -159,6 +162,9 @@ int main(void)
 	memset(rxBuffer, '\0', sizeof(rxBuffer));
 	rxBufferHead = 0;
 
+	joyX = 0;
+	joyY = 0;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -210,7 +216,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
-  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(500), pdTRUE, 1, timerForSendDataCallback);
+  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(321), pdTRUE, 1, timerForSendDataCallback);
   xTimerStart(timerForDataSending, portMAX_DELAY);
   /* USER CODE END RTOS_TIMERS */
 
@@ -232,7 +238,7 @@ int main(void)
   PC_14_LEDHandle = osThreadCreate(osThread(PC_14_LED), NULL);
 
   /* definition and creation of EspCommunication */
-  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 300);
+  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 364);
   EspCommunicationHandle = osThreadCreate(osThread(EspCommunication), NULL);
 
   /* definition and creation of EncoderR */
@@ -983,7 +989,7 @@ void espCommunication(void const * argument)
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  strcpy(txBuffer, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
 	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
-	  vTaskDelay( pdMS_TO_TICKS( 600 ) );
+	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
 
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 		// Create the entire GET request string
@@ -1009,12 +1015,58 @@ void espCommunication(void const * argument)
   for(;;)
   {
 	  // Calculate the number of bytes received since the last processing
-	  uint8_t receivedBytes = (ESPBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPBUFFERSIZE;
+	  uint8_t receivedBytes = 0;
+	  if((ESPBUFFERSIZE - DMA1_Channel3->CNDTR) < rxBufferHead) {
+		  receivedBytes = (ESPBUFFERSIZE - rxBufferHead + ESPBUFFERSIZE - DMA1_Channel3->CNDTR) % ESPBUFFERSIZE;
+	  } else {
+		  receivedBytes = (ESPBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPBUFFERSIZE;
+	  }
 
 	  // Process the received data
-      for (uint8_t i = 0; i < receivedBytes; i++) {
+      for (uint16_t i = 0; i < receivedBytes; i++) {
+    	  if(rxBuffer[(rxBufferHead + i)%ESPBUFFERSIZE] == 'J'){
+    		  if(rxBuffer[(rxBufferHead + i + 1)%ESPBUFFERSIZE] == 'O') {
+    			  if(rxBuffer[(rxBufferHead + i + 2)%ESPBUFFERSIZE] == 'Y') {
+    				  if(rxBuffer[(rxBufferHead + i + 3)%ESPBUFFERSIZE] == '_') {
+    					  if(rxBuffer[(rxBufferHead + i + 4)%ESPBUFFERSIZE] == 'X') {
+    						  uint16_t j = rxBufferHead + i + 5;
+    						  if(rxBuffer[j%ESPBUFFERSIZE] == '-') {
+    							  j++;
+    						  }
+    						  joyX = 0;
+    						  while(rxBuffer[j%ESPBUFFERSIZE] != 'Y') {
+    							  joyX = (joyX*10) + (rxBuffer[j%ESPBUFFERSIZE]-48);
+    							  j++;
+    							  if(j - (rxBufferHead + i + 5) >= 4) break;
+    						  }
+    						  if(rxBuffer[(rxBufferHead + i + 5)%ESPBUFFERSIZE] == '-') {
+    							  joyX = joyX * (-1);
+    						  }
 
-    	  __asm__ volatile("NOP");
+    						  if(rxBuffer[j%ESPBUFFERSIZE] == 'Y') {
+    							  uint16_t k = j + 1;
+        						  if(rxBuffer[k%ESPBUFFERSIZE] == '-') {
+        							  k++;
+        						  }
+        						  joyY = 0;
+        						  while(rxBuffer[k%ESPBUFFERSIZE] != '_') {
+        							  joyY = (joyY*10) + (rxBuffer[k%ESPBUFFERSIZE]-48);
+        							  k++;
+        							  if(k - (j + 1) >= 4) break;
+        						  }
+        						  if(rxBuffer[(j + 1)%ESPBUFFERSIZE] == '-') {
+        							  joyY = joyY * (-1);
+        						  }
+    						  }
+
+    						  if(joyX < 0) {
+    							  __asm__ volatile("NOP");
+    						  }
+    					  }
+    				  }
+    			  }
+    		  }
+    	  }
       }
 
       // Update the buffer head index
@@ -1022,12 +1074,12 @@ void espCommunication(void const * argument)
 
       if(xEventGroupGetBitsFromISR(timerFdsEventGroup) == 0x1) {
     	    // Create the JSON content with variable values
-    	    char jsonContent[150];
-    	    sprintf(jsonContent, "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\"}", avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue);
+    	    char jsonContent[200];
+    	    sprintf(jsonContent, "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\"}", avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY);
 
     	    // Create the entire POST request string
-    	    char postRequest[400];
-    	    sprintf(postRequest, "POST / HTTP/1.1\r\n"
+    	    char postRequest[500];
+    	    sprintf(postRequest, "POST /robot_data HTTP/1.1\r\n"
     	                         "Host: 192.168.137.1\r\n"
     	                         "Content-Type: application/json\r\n"
     	                         "Content-Length: %d\r\n\r\n"
@@ -1216,6 +1268,15 @@ void softwarePWML(void const * argument)
   /* Infinite loop */
   for(;;)
   {
+	  float reqValueTemp = MAXRPM*((float)joyY/100);
+	  if(joyX < 0) {
+		  reqValueTemp = reqValueTemp - reqValueTemp*(-(float)joyX/100);
+	  }
+	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
+		  reqValueTemp = 0;
+	  }
+	  SoftPwmL.reqValue = (int16_t)reqValueTemp;
+
 	  SoftPwmL.curValue = EncoderL.rpm;
 	  errorValue = SoftPwmL.reqValue - SoftPwmL.curValue;
 	  pValue = KP * errorValue;

@@ -131,9 +131,9 @@ void HandleClient(SOCKET clientSocket) {
     std::thread::id thisThreadId = std::this_thread::get_id();
     std::thread recvThread(ReceiveData, clientSocket, thisThreadId);
 
-    // Sleep for 3000 milliseconds (3 seconds)
+    // Sleep for x milliseconds (x*10^-3 seconds)
     std::cout << "\033[36mSleeping for x ms\033[0m" << std::endl;
-    sleep_for(std::chrono::milliseconds(350));
+    sleep_for(std::chrono::milliseconds(65));
 
     // Check the flag and start sendThread if needed
     std::cout << "\033[36mChecking startSendThread flag\033[0m" << std::endl;
@@ -264,11 +264,29 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
 
                         size_t softPwmLPwmValuePos = jsonContent.find("\"SoftPwmL.pwmValue\":");
                         if (softPwmLPwmValuePos != std::string::npos) {
-                            size_t softPwmLPwmValueEnd = jsonContent.find("}", softPwmLPwmValuePos);
+                            size_t softPwmLPwmValueEnd = jsonContent.find(",", softPwmLPwmValuePos);
                             if (softPwmLPwmValueEnd != std::string::npos) {
                                 std::string softPwmLPwmValue = jsonContent.substr(softPwmLPwmValuePos + 20, softPwmLPwmValueEnd - (softPwmLPwmValuePos + 20));
                                 std::cout << "\033[33mSoftPwmL.pwmValue: " << softPwmLPwmValue << "\033[0m" << std::endl;
                                 softPwmLValue = softPwmLPwmValue;
+                            }
+                        }
+
+                        size_t joyXValuePos = jsonContent.find("\"joyX\":");
+                        if (joyXValuePos != std::string::npos) {
+                            size_t joyXValueEnd = jsonContent.find(",", joyXValuePos);
+                            if (joyXValueEnd != std::string::npos) {
+                                std::string joyXValue = jsonContent.substr(joyXValuePos + 7, joyXValueEnd - (joyXValuePos + 7));
+                                std::cout << "\033[33mjoyX: " << joyXValue << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t joyYValuePos = jsonContent.find("\"joyY\":");
+                        if (joyYValuePos != std::string::npos) {
+                            size_t joyYValueEnd = jsonContent.find("}", joyYValuePos);
+                            if (joyYValueEnd != std::string::npos) {
+                                std::string joyYValue = jsonContent.substr(joyYValuePos + 7, joyYValueEnd - (joyYValuePos + 7));
+                                std::cout << "\033[33mjoyY: " << joyYValue << "\033[0m" << std::endl;
                             }
                         }
                     }
@@ -326,12 +344,13 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
 
 void SendData(SOCKET clientSocket) {
     while (true) {
-        std::string message = "8877";
+
+        std::string message = "JOY_X" + joyX + "Y" + joyY + "_";
         if(sendResponse(clientSocket, message) != 0) {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        std::this_thread::sleep_for(std::chrono::milliseconds(146));
     }
 }
 

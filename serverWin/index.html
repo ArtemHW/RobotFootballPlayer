@@ -38,7 +38,7 @@
                     })
                     .finally(() => {
                         // Repeat after a certain interval (adjust as needed)
-                        setTimeout(fetchData, 250);
+                        setTimeout(fetchData, 321);
                     });
             }
 
@@ -164,11 +164,11 @@
         var joy3X = document.getElementById("joy3X");
         var joy3Y = document.getElementById("joy3Y");
 
-        setInterval(function(){ joy3IinputPosX.value=Joy3.GetPosX(); }, 100);
-        setInterval(function(){ joy3InputPosY.value=Joy3.GetPosY(); }, 100);
-        setInterval(function(){ joy3Direzione.value=Joy3.GetDir(); }, 100);
-        setInterval(function(){ joy3X.value=Joy3.GetX(); }, 100);
-        setInterval(function(){ joy3Y.value=Joy3.GetY(); }, 100);
+        setInterval(function(){ joy3IinputPosX.value=Joy3.GetPosX(); }, 240);
+        setInterval(function(){ joy3InputPosY.value=Joy3.GetPosY(); }, 240);
+        setInterval(function(){ joy3Direzione.value=Joy3.GetDir(); }, 240);
+        setInterval(function(){ joy3X.value=Joy3.GetX(); }, 240);
+        setInterval(function(){ joy3Y.value=Joy3.GetY(); }, 240);
     </script>
 
     <script type="text/javascript">
@@ -177,10 +177,28 @@
             const joy3XValue = Joy3.GetX();
             const joy3YValue = Joy3.GetY();
 
+            // Limit values to the range of -100 to 100
+            let limitedJoy3XValue = joy3XValue;
+            let limitedJoy3YValue = joy3YValue;
+
+            // Ensure joy3XValue is within the range
+            if (limitedJoy3XValue > 100) {
+                limitedJoy3XValue = 100;
+            } else if (limitedJoy3XValue < -100) {
+                limitedJoy3XValue = -100;
+            }
+
+            // Ensure joy3YValue is within the range
+            if (limitedJoy3YValue > 100) {
+                limitedJoy3YValue = 100;
+            } else if (limitedJoy3YValue < -100) {
+                limitedJoy3YValue = -100;
+            }
+
             // Create JSON payload
             const jsonData = {
-                joy3X: joy3XValue,
-                joy3Y: joy3YValue
+                joy3X: limitedJoy3XValue,
+                joy3Y: limitedJoy3YValue
             };
 
             axios.post('http://192.168.137.1:8080/joystick_data', jsonData)
@@ -192,7 +210,7 @@
                     // Handle error if needed
                 })
                 .finally(() => {
-                    setTimeout(sendJoystickData, 250);
+                    setTimeout(sendJoystickData, 146);
                 });
         }
 

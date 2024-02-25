@@ -99,9 +99,9 @@ void Error_Handler(void);
 #define BATMINV 2110
 #define OVERVOLTAGEONLED 0x1
 #define UNDERVOLTAGEONLED 0x2
-#define KP 0.002f
+#define KP 0.006f
 #define KI  0.0f   //0.0001f
-#define MAXRPM 12500
+#define MAXRPM 13000
 #define ENCDELAY 8
 #define ESPBUFFERSIZE 511
 #define IPSERVER "127.16.19.7"
