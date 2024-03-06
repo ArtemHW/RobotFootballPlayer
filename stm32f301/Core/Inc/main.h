@@ -49,7 +49,6 @@ struct SoftPWM {
 	int16_t reqValue;
 	int16_t curValue;
 	int16_t pwmValue;
-	//uint16_t softCounterValue;
 	uint8_t status;
 
 };
@@ -99,11 +98,12 @@ void Error_Handler(void);
 #define BATMINV 2110
 #define OVERVOLTAGEONLED 0x1
 #define UNDERVOLTAGEONLED 0x2
-#define KP 0.006f
-#define KI  0.0f   //0.0001f
+#define KP 0.01f
+#define KI  0.000002f   //0.0001f
 #define MAXRPM 13000
-#define ENCDELAY 8
-#define ESPBUFFERSIZE 511
+#define ENCDELAY 4
+#define ESPRXBUFFERSIZE 511
+#define ESPTXBUFFERSIZE 511
 #define IPSERVER "127.16.19.7"
 #define PORTSERVER "8080"
 /* USER CODE END Private defines */

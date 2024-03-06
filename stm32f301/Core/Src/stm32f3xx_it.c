@@ -348,4 +348,60 @@ void TIM2_IRQHandler(void)
 	__asm__ volatile("NOP");
 }
 
+void TIM1_BRK_TIM15_IRQHandler(void)
+{
+	if((TIM15->SR & TIM_SR_UIF) == TIM_SR_UIF) {
+		__asm__ volatile("NOP");
+
+		GPIOA->ODR &= ~(1<<7); //_3A
+		GPIOB->ODR &= ~(1<<0); //_4A
+
+		GPIOA->ODR &= ~(1<<4); //_1A
+		GPIOA->ODR &= ~(1<<5); //_2A
+
+		TIM15->SR &= ~(TIM_SR_UIF);
+		if((TIM15->SR & TIM_SR_UIF) == 0) {
+			__asm__ volatile("NOP");
+		}
+		__asm__ volatile("NOP");
+	}
+
+	if((TIM15->SR & TIM_SR_CC1IF) == TIM_SR_CC1IF) {
+		__asm__ volatile("NOP");
+
+		if(SoftPwmR.status == 1) {
+			GPIOA->ODR |= (1<<7); //_3A
+			GPIOB->ODR &= ~(1<<0); //_4A
+		} else if(SoftPwmR.status == 2) {
+			GPIOA->ODR &= ~(1<<7); //_3A
+			GPIOB->ODR |= (1<<0); //_4A
+		}
+
+		TIM15->SR &= ~(TIM_SR_CC1IF);
+		if((TIM15->SR & TIM_SR_CC1IF) == 0) {
+			__asm__ volatile("NOP");
+		}
+		__asm__ volatile("NOP");
+	}
+
+	if((TIM15->SR & TIM_SR_CC2IF) == TIM_SR_CC2IF) {
+		__asm__ volatile("NOP");
+
+		if(SoftPwmL.status == 1) {
+			GPIOA->ODR &= ~(1<<4); //_1A
+			GPIOA->ODR |= (1<<5); //_2A
+		} else if(SoftPwmL.status == 2) {
+			GPIOA->ODR |= (1<<4); //_1A
+			GPIOA->ODR &= ~(1<<5); //_2A
+		}
+
+
+		TIM15->SR &= ~(TIM_SR_CC2IF);
+		if((TIM15->SR & TIM_SR_CC2IF) == 0) {
+			__asm__ volatile("NOP");
+		}
+		__asm__ volatile("NOP");
+	}
+}
+
 /* USER CODE END 1 */

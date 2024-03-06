@@ -47,6 +47,7 @@ ADC_HandleTypeDef hadc1;
 
 SPI_HandleTypeDef hspi2;
 
+TIM_HandleTypeDef htim15;
 TIM_HandleTypeDef htim16;
 TIM_HandleTypeDef htim17;
 
@@ -75,8 +76,8 @@ float kToRpm;
 
 uint16_t softCounterValue;
 
-char txBuffer[ESPBUFFERSIZE];
-volatile char rxBuffer[ESPBUFFERSIZE];
+char txBuffer[ESPTXBUFFERSIZE];
+volatile char rxBuffer[ESPRXBUFFERSIZE];
 volatile uint16_t rxBufferHead;
 
 TimerHandle_t timerForDataSending;
@@ -95,6 +96,7 @@ static void MX_SPI2_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM17_Init(void);
 static void MX_TIM16_Init(void);
+static void MX_TIM15_Init(void);
 void psMeasure(void const * argument);
 void pc13LedCntrl(void const * argument);
 void pc14LedCntrl(void const * argument);
@@ -108,6 +110,7 @@ void softwarePWML(void const * argument);
 void ADC1_configuration(void);
 void TIM1_configuration(void);
 void TIM2_configuration(void);
+void TIM15_additional_configuration(void);
 void TIM16_additional_configuration(void);
 void TIM17_additional_configuration(void);
 void USART3_additional_configuration(void);
@@ -147,13 +150,11 @@ int main(void)
 	SoftPwmR.curValue = 0;
 	SoftPwmR.reqValue = 0;
 	SoftPwmR.pwmValue = 0;
-	//SoftPwmR.softCounterValue = 0;
 	SoftPwmR.status = 0;
 
 	SoftPwmL.curValue = 0;
 	SoftPwmL.reqValue = 0;
 	SoftPwmL.pwmValue = 0;
-	//SoftPwmL.softCounterValue = 0;
 	SoftPwmL.status = 0;
 
 	softCounterValue = 0;
@@ -191,11 +192,13 @@ int main(void)
   MX_USART3_UART_Init();
   MX_TIM17_Init();
   MX_TIM16_Init();
+  MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
   ADC1_configuration();
   TIM1_configuration();
   TIM2_configuration();
   TIM17_additional_configuration();
+  TIM15_additional_configuration();
   TIM16_additional_configuration();
   USART3_additional_configuration();
 
@@ -216,7 +219,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
-  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(321), pdTRUE, 1, timerForSendDataCallback);
+  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(113), pdTRUE, 1, timerForSendDataCallback); //321
   xTimerStart(timerForDataSending, portMAX_DELAY);
   /* USER CODE END RTOS_TIMERS */
 
@@ -226,19 +229,19 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of PS_Measure */
-  osThreadDef(PS_Measure, psMeasure, osPriorityNormal, 0, 128);
+  osThreadDef(PS_Measure, psMeasure, osPriorityNormal, 0, 96);
   PS_MeasureHandle = osThreadCreate(osThread(PS_Measure), NULL);
 
   /* definition and creation of PC_13_LED */
-  osThreadDef(PC_13_LED, pc13LedCntrl, osPriorityNormal, 0, 128);
+  osThreadDef(PC_13_LED, pc13LedCntrl, osPriorityNormal, 0, 96);
   PC_13_LEDHandle = osThreadCreate(osThread(PC_13_LED), NULL);
 
   /* definition and creation of PC_14_LED */
-  osThreadDef(PC_14_LED, pc14LedCntrl, osPriorityNormal, 0, 128);
+  osThreadDef(PC_14_LED, pc14LedCntrl, osPriorityNormal, 0, 96);
   PC_14_LEDHandle = osThreadCreate(osThread(PC_14_LED), NULL);
 
   /* definition and creation of EspCommunication */
-  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 364);
+  osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 256);
   EspCommunicationHandle = osThreadCreate(osThread(EspCommunication), NULL);
 
   /* definition and creation of EncoderR */
@@ -250,11 +253,11 @@ int main(void)
   EncoderLHandle = osThreadCreate(osThread(EncoderL), NULL);
 
   /* definition and creation of SoftwarePwmR */
-  osThreadDef(SoftwarePwmR, softwarePWMR, osPriorityNormal, 0, 256);
+  osThreadDef(SoftwarePwmR, softwarePWMR, osPriorityNormal, 0, 156);
   SoftwarePwmRHandle = osThreadCreate(osThread(SoftwarePwmR), NULL);
 
   /* definition and creation of SoftwarePwmL */
-  osThreadDef(SoftwarePwmL, softwarePWML, osPriorityNormal, 0, 256);
+  osThreadDef(SoftwarePwmL, softwarePWML, osPriorityNormal, 0, 156);
   SoftwarePwmLHandle = osThreadCreate(osThread(SoftwarePwmL), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -313,8 +316,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_TIM16|RCC_PERIPHCLK_TIM17
-                              |RCC_PERIPHCLK_ADC1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_TIM15|RCC_PERIPHCLK_TIM16
+                              |RCC_PERIPHCLK_TIM17|RCC_PERIPHCLK_ADC1;
+  PeriphClkInit.Tim15ClockSelection = RCC_TIM15CLK_HCLK;
   PeriphClkInit.Tim16ClockSelection = RCC_TIM16CLK_HCLK;
   PeriphClkInit.Tim17ClockSelection = RCC_TIM17CLK_HCLK;
   PeriphClkInit.Adc1ClockSelection = RCC_ADC1PLLCLK_DIV2;
@@ -419,6 +423,52 @@ static void MX_SPI2_Init(void)
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
+
+}
+
+/**
+  * @brief TIM15 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM15_Init(void)
+{
+
+  /* USER CODE BEGIN TIM15_Init 0 */
+
+  /* USER CODE END TIM15_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM15_Init 1 */
+
+  /* USER CODE END TIM15_Init 1 */
+  htim15.Instance = TIM15;
+  htim15.Init.Prescaler = 63;
+  htim15.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim15.Init.Period = 100;
+  htim15.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim15.Init.RepetitionCounter = 0;
+  htim15.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim15) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim15, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim15, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM15_Init 2 */
+
+  /* USER CODE END TIM15_Init 2 */
 
 }
 
@@ -758,10 +808,24 @@ void TIM2_configuration(void)
     TIM2->CR1 |= TIM_CR1_CEN;
 }
 
+void TIM15_additional_configuration(void)
+{
+	TIM15->DIER |= TIM_DIER_CC1IE;
+	TIM15->DIER |= TIM_DIER_CC2IE;
+	TIM15->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
+
+    // Enable the TIM15 interrupt
+    NVIC_EnableIRQ(TIM1_BRK_TIM15_IRQn);
+    // Set priority for the TIM15 interrupt
+    NVIC_SetPriority(TIM1_BRK_TIM15_IRQn, 5);
+
+	TIM15->CR1 |= TIM_CR1_CEN;
+}
+
 void TIM16_additional_configuration(void)
 {
 	TIM16->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
-	TIM16->CR1 |= TIM_CR1_CEN;
+//	TIM16->CR1 |= TIM_CR1_CEN;
 }
 
 void TIM17_additional_configuration(void)
@@ -784,7 +848,7 @@ void USART3_additional_configuration(void)
 	DMA1_Channel3->CCR &= ~DMA_CCR_HTIE;
 	DMA1_Channel3->CCR &= ~DMA_CCR_TEIE;
 
-	DMA1_Channel3->CNDTR = ESPBUFFERSIZE;
+	DMA1_Channel3->CNDTR = ESPRXBUFFERSIZE;
 	DMA1_Channel3->CPAR = (uint32_t)&(USART3->RDR);
 	DMA1_Channel3->CMAR = (uint32_t)&rxBuffer[0];
 
@@ -981,6 +1045,10 @@ void espCommunication(void const * argument)
 
 	  vTaskDelay( pdMS_TO_TICKS( 2000 ) );
 
+	  sprintf(txBuffer, "ATE0\r\n");
+	  sendATCommand(&huart3, txBuffer, strlen(txBuffer), 250);
+	  vTaskDelay( pdMS_TO_TICKS( 100 ) );
+
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  strcpy(txBuffer, "AT+CIPCLOSE\r\n");
 	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
@@ -989,7 +1057,7 @@ void espCommunication(void const * argument)
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  strcpy(txBuffer, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
 	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
-	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
+	  vTaskDelay( pdMS_TO_TICKS( 40 ) );
 
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 		// Create the entire GET request string
@@ -1007,6 +1075,8 @@ void espCommunication(void const * argument)
 	  sendATCommand(&huart3, pDataBuf, sizeof(pDataBuf), 250);
 	  vTaskDelay( pdMS_TO_TICKS( 10 ) );
 	  sendATCommand(&huart3, txBuffer, getRequestLength, 250);
+
+	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
 
 	  __asm__ volatile("NOP");
@@ -1016,45 +1086,45 @@ void espCommunication(void const * argument)
   {
 	  // Calculate the number of bytes received since the last processing
 	  uint8_t receivedBytes = 0;
-	  if((ESPBUFFERSIZE - DMA1_Channel3->CNDTR) < rxBufferHead) {
-		  receivedBytes = (ESPBUFFERSIZE - rxBufferHead + ESPBUFFERSIZE - DMA1_Channel3->CNDTR) % ESPBUFFERSIZE;
+	  if((ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR) < rxBufferHead) {
+		  receivedBytes = (ESPRXBUFFERSIZE - rxBufferHead + ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR) % ESPRXBUFFERSIZE;
 	  } else {
-		  receivedBytes = (ESPBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPBUFFERSIZE;
+		  receivedBytes = (ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPRXBUFFERSIZE;
 	  }
 
 	  // Process the received data
       for (uint16_t i = 0; i < receivedBytes; i++) {
-    	  if(rxBuffer[(rxBufferHead + i)%ESPBUFFERSIZE] == 'J'){
-    		  if(rxBuffer[(rxBufferHead + i + 1)%ESPBUFFERSIZE] == 'O') {
-    			  if(rxBuffer[(rxBufferHead + i + 2)%ESPBUFFERSIZE] == 'Y') {
-    				  if(rxBuffer[(rxBufferHead + i + 3)%ESPBUFFERSIZE] == '_') {
-    					  if(rxBuffer[(rxBufferHead + i + 4)%ESPBUFFERSIZE] == 'X') {
+    	  if(rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE] == 'J'){
+    		  if(rxBuffer[(rxBufferHead + i + 1)%ESPRXBUFFERSIZE] == 'O') {
+    			  if(rxBuffer[(rxBufferHead + i + 2)%ESPRXBUFFERSIZE] == 'Y') {
+    				  if(rxBuffer[(rxBufferHead + i + 3)%ESPRXBUFFERSIZE] == '_') {
+    					  if(rxBuffer[(rxBufferHead + i + 4)%ESPRXBUFFERSIZE] == 'X') {
     						  uint16_t j = rxBufferHead + i + 5;
-    						  if(rxBuffer[j%ESPBUFFERSIZE] == '-') {
+    						  if(rxBuffer[j%ESPRXBUFFERSIZE] == '-') {
     							  j++;
     						  }
     						  joyX = 0;
-    						  while(rxBuffer[j%ESPBUFFERSIZE] != 'Y') {
-    							  joyX = (joyX*10) + (rxBuffer[j%ESPBUFFERSIZE]-48);
+    						  while(rxBuffer[j%ESPRXBUFFERSIZE] != 'Y') {
+    							  joyX = (joyX*10) + (rxBuffer[j%ESPRXBUFFERSIZE]-48);
     							  j++;
     							  if(j - (rxBufferHead + i + 5) >= 4) break;
     						  }
-    						  if(rxBuffer[(rxBufferHead + i + 5)%ESPBUFFERSIZE] == '-') {
+    						  if(rxBuffer[(rxBufferHead + i + 5)%ESPRXBUFFERSIZE] == '-') {
     							  joyX = joyX * (-1);
     						  }
 
-    						  if(rxBuffer[j%ESPBUFFERSIZE] == 'Y') {
+    						  if(rxBuffer[j%ESPRXBUFFERSIZE] == 'Y') {
     							  uint16_t k = j + 1;
-        						  if(rxBuffer[k%ESPBUFFERSIZE] == '-') {
+        						  if(rxBuffer[k%ESPRXBUFFERSIZE] == '-') {
         							  k++;
         						  }
         						  joyY = 0;
-        						  while(rxBuffer[k%ESPBUFFERSIZE] != '_') {
-        							  joyY = (joyY*10) + (rxBuffer[k%ESPBUFFERSIZE]-48);
+        						  while(rxBuffer[k%ESPRXBUFFERSIZE] != '_') {
+        							  joyY = (joyY*10) + (rxBuffer[k%ESPRXBUFFERSIZE]-48);
         							  k++;
         							  if(k - (j + 1) >= 4) break;
         						  }
-        						  if(rxBuffer[(j + 1)%ESPBUFFERSIZE] == '-') {
+        						  if(rxBuffer[(j + 1)%ESPRXBUFFERSIZE] == '-') {
         							  joyY = joyY * (-1);
         						  }
     						  }
@@ -1070,24 +1140,24 @@ void espCommunication(void const * argument)
       }
 
       // Update the buffer head index
-      rxBufferHead = ((rxBufferHead + receivedBytes) % ESPBUFFERSIZE);
+      rxBufferHead = ((rxBufferHead + receivedBytes) % ESPRXBUFFERSIZE);
 
       if(xEventGroupGetBitsFromISR(timerFdsEventGroup) == 0x1) {
     	    // Create the JSON content with variable values
-    	    char jsonContent[200];
-    	    sprintf(jsonContent, "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\"}", avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY);
+//    	    char jsonContent[200];
+//    	    sprintf(jsonContent, "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\"}", avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY);
 
     	    // Create the entire POST request string
-    	    char postRequest[500];
-    	    sprintf(postRequest, "POST /robot_data HTTP/1.1\r\n"
+//    	    char txBuffer[500];
+    	    sprintf(txBuffer, "POST /robot_data HTTP/1.1\r\n"
     	                         "Host: 192.168.137.1\r\n"
     	                         "Content-Type: application/json\r\n"
-    	                         "Content-Length: %d\r\n\r\n"
-    	                         "%s",
-    	                          (int)strlen(jsonContent), jsonContent);
+//    	                         "Content-Length: %d\r\n\r\n"
+    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\"}",
+								 avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY);
 
     	    // Calculate the number of characters in the POST request
-    	    int postRequestLength = strlen(postRequest);
+    	    int postRequestLength = strlen(txBuffer);
 
 //    	  char pData[] = "GET / HTTP/1.1\r\nHost: 192.168.137.1:8080\r\n\r\n";
 //    	  int d = sizeof(pData)-1;
@@ -1109,7 +1179,7 @@ void espCommunication(void const * argument)
 //    	  while(atSend_USART3_DMA(pData, sizeof(pData)-1) != 0) {
 //    	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
 //    	  }
-    	  while(atSend_USART3_DMA(postRequest, postRequestLength) != 0) {
+    	  while(atSend_USART3_DMA(txBuffer, postRequestLength) != 0) {
     	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
     	  }
     	  xEventGroupClearBits(timerFdsEventGroup, 0xFFFFFF);
@@ -1145,12 +1215,12 @@ void encoderR(void const * argument)
 	  }
 
 	  if (!EncoderR.posCntUpdate) {
-		  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
+		  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
 	  } else {
 		  if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
-			  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
 		  } else {
-			  EncoderR.rpm = ((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
 		  }
 		  EncoderR.posCntUpdate = 0;
 	  }
@@ -1222,25 +1292,46 @@ void softwarePWMR(void const * argument)
 	vTaskDelay( pdMS_TO_TICKS( 10 ) );
 	GPIOA->ODR |= (1<<6); //EN34
 
-	SoftPwmR.reqValue = 8000;
+	SoftPwmR.reqValue = 6000;
   /* Infinite loop */
   for(;;)
   {
+	  float reqValueTemp = MAXRPM*((float)joyY/100);
+	  if(joyX > 0) {
+		  reqValueTemp = reqValueTemp - reqValueTemp*((float)joyX/100);
+	  }
+	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
+		  reqValueTemp = 0;
+	  }
+	  SoftPwmR.reqValue = (int16_t)reqValueTemp;
+
 	  SoftPwmR.curValue = EncoderR.rpm;
 	  errorValue = SoftPwmR.reqValue - SoftPwmR.curValue;
 	  pValue = KP * errorValue;
 	  iValue += KI * errorValue;
 	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
 	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
+	  if((iValue <= 50) && (iValue >= -50)) {
+		  iValue = 0;
+	  }
 	  sumValue = (pValue + iValue);
 	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
+	  if(pwmFloatValue > 100) pwmFloatValue = 100;
+	  else if(pwmFloatValue < -100) pwmFloatValue = -100;
 	  SoftPwmR.pwmValue = (int16_t)pwmFloatValue;
-	  if(SoftPwmR.pwmValue > 100) SoftPwmR.pwmValue = 100;
-	  else if(SoftPwmR.pwmValue < -100) SoftPwmR.pwmValue = -100;
-//		GPIOA->ODR |= (1<<6); //EN34
-//		GPIOA->ODR &= ~(1<<7); //_3A
-//		GPIOB->ODR |= (1<<0); //_4A
-//	  taskYIELD();
+//	  if(SoftPwmR.pwmValue > 100) SoftPwmR.pwmValue = 100;
+//	  else if(SoftPwmR.pwmValue < -100) SoftPwmR.pwmValue = -100;
+
+	  if(SoftPwmR.pwmValue < 0) {
+		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue*(-1);
+		  SoftPwmR.status = 2;
+	  } else if(SoftPwmR.pwmValue > 0){
+		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue;
+		  SoftPwmR.status = 1;
+	  } else {
+		  SoftPwmR.status = 0;
+	  }
+
 	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
   }
   /* USER CODE END softwarePWMR */
@@ -1283,13 +1374,26 @@ void softwarePWML(void const * argument)
 	  iValue += KI * errorValue;
 	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
 	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
+	  if((iValue <= 50) && (iValue >= -50)) {
+		  iValue = 0;
+	  }
 	  sumValue = (pValue + iValue);
 	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
 	  if(pwmFloatValue > 100) pwmFloatValue = 100;
 	  else if(pwmFloatValue < -100) pwmFloatValue = -100;
 	  SoftPwmL.pwmValue = (int16_t)pwmFloatValue;
-	  if(SoftPwmL.pwmValue > 100) SoftPwmL.pwmValue = 100;
-	  else if(SoftPwmL.pwmValue < -100) SoftPwmL.pwmValue = -100;
+//	  if(SoftPwmL.pwmValue > 100) SoftPwmL.pwmValue = 100;
+//	  else if(SoftPwmL.pwmValue < -100) SoftPwmL.pwmValue = -100;
+
+	  if(SoftPwmL.pwmValue < 0) {
+		  TIM15->CCR2 = TIM15->ARR - SoftPwmL.pwmValue*(-1);
+		  SoftPwmL.status = 2;
+	  } else if(SoftPwmL.pwmValue > 0) {
+		  TIM15->CCR2 = TIM15->ARR - SoftPwmL.pwmValue;
+		  SoftPwmL.status = 1;
+	  } else {
+		  SoftPwmL.status = 0;
+	  }
 
 	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
   }

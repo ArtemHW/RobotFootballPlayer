@@ -133,7 +133,7 @@ void HandleClient(SOCKET clientSocket) {
 
     // Sleep for x milliseconds (x*10^-3 seconds)
     std::cout << "\033[36mSleeping for x ms\033[0m" << std::endl;
-    sleep_for(std::chrono::milliseconds(65));
+    sleep_for(std::chrono::milliseconds(75));
 
     // Check the flag and start sendThread if needed
     std::cout << "\033[36mChecking startSendThread flag\033[0m" << std::endl;
@@ -171,9 +171,9 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
             return;
         } else {
             std::cout << "Received data: " << std::endl;
-            for (int i = 0; i < bytes; ++i) {
-                std::cout << buff[i];
-            }
+            // for (int i = 0; i < bytes; ++i) {
+            //     std::cout << buff[i];
+            // }
             std::cout << std::endl;
             // Parse the request and send a response as before.
             // ...
@@ -350,7 +350,7 @@ void SendData(SOCKET clientSocket) {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(146));
+        std::this_thread::sleep_for(std::chrono::milliseconds(81));
     }
 }
 
