@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 #include <espATcommands.h>
 /* USER CODE END Includes */
 
@@ -79,12 +80,15 @@ uint16_t softCounterValue;
 char txBuffer[ESPTXBUFFERSIZE];
 volatile char rxBuffer[ESPRXBUFFERSIZE];
 volatile uint16_t rxBufferHead;
+char rxBufferCopy[128];
 
 TimerHandle_t timerForDataSending;
 EventGroupHandle_t timerFdsEventGroup;
 
 int8_t joyX;
 int8_t joyY;
+float tSpeed;
+float aSpeed;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -162,9 +166,12 @@ int main(void)
 	memset(txBuffer, '\0', sizeof(txBuffer));
 	memset(rxBuffer, '\0', sizeof(rxBuffer));
 	rxBufferHead = 0;
+	memset(rxBufferCopy, '\0', sizeof(rxBufferCopy));
 
 	joyX = 0;
 	joyY = 0;
+	tSpeed = 0;
+	aSpeed = 0;
 
   /* USER CODE END 1 */
 
@@ -219,7 +226,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
-  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(113), pdTRUE, 1, timerForSendDataCallback); //321
+  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(211), pdTRUE, 1, timerForSendDataCallback); //321
   xTimerStart(timerForDataSending, portMAX_DELAY);
   /* USER CODE END RTOS_TIMERS */
 
@@ -445,9 +452,9 @@ static void MX_TIM15_Init(void)
 
   /* USER CODE END TIM15_Init 1 */
   htim15.Instance = TIM15;
-  htim15.Init.Prescaler = 63;
+  htim15.Init.Prescaler = 15;
   htim15.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim15.Init.Period = 100;
+  htim15.Init.Period = 400;
   htim15.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim15.Init.RepetitionCounter = 0;
   htim15.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -944,18 +951,18 @@ void pc13LedCntrl(void const * argument)
     eventBits = xEventGroupGetBits(pc13EventGroup);
     switch (eventBits) {
 		case OVERVOLTAGEONLED:
-			osDelay(100);
+			osDelay(200);
 			GPIOC->ODR ^= GPIO_ODR_13;
 			__asm__ volatile("NOP");
 			break;
 		case UNDERVOLTAGEONLED:
-			osDelay(200);
+			osDelay(300);
 			GPIOC->ODR ^= GPIO_ODR_13;
 			__asm__ volatile("NOP");
 			break;
 		default:
 			GPIOC->ODR &= ~GPIO_ODR_13;
-			osDelay(12);
+			osDelay(200);
 			__asm__ volatile("NOP");
 			break;
 	}
@@ -981,18 +988,18 @@ void pc14LedCntrl(void const * argument)
     eventBits = xEventGroupGetBits(pc14EventGroup);
     switch (eventBits) {
 		case OVERVOLTAGEONLED:
-			osDelay(100);
+			osDelay(200);
 			GPIOC->ODR ^= GPIO_ODR_14;
 			__asm__ volatile("NOP");
 			break;
 		case UNDERVOLTAGEONLED:
-			osDelay(200);
+			osDelay(300);
 			GPIOC->ODR ^= GPIO_ODR_14;
 			__asm__ volatile("NOP");
 			break;
 		default:
 			GPIOC->ODR &= ~GPIO_ODR_14;
-			osDelay(12);
+			osDelay(200);
 			__asm__ volatile("NOP");
 			break;
 	}
@@ -1092,52 +1099,92 @@ void espCommunication(void const * argument)
 		  receivedBytes = (ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPRXBUFFERSIZE;
 	  }
 
+	  memset(rxBufferCopy, '\0', sizeof(rxBufferCopy));
+	  for(uint16_t i = 0; i < receivedBytes; i++) {
+		  rxBufferCopy[i] = rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE];
+	  }
+
 	  // Process the received data
       for (uint16_t i = 0; i < receivedBytes; i++) {
     	  if(rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE] == 'J'){
     		  if(rxBuffer[(rxBufferHead + i + 1)%ESPRXBUFFERSIZE] == 'O') {
     			  if(rxBuffer[(rxBufferHead + i + 2)%ESPRXBUFFERSIZE] == 'Y') {
     				  if(rxBuffer[(rxBufferHead + i + 3)%ESPRXBUFFERSIZE] == '_') {
-    					  if(rxBuffer[(rxBufferHead + i + 4)%ESPRXBUFFERSIZE] == 'X') {
+    					  if(rxBuffer[(rxBufferHead + i + 4)%ESPRXBUFFERSIZE] == 'T') {
     						  uint16_t j = rxBufferHead + i + 5;
     						  if(rxBuffer[j%ESPRXBUFFERSIZE] == '-') {
     							  j++;
     						  }
-    						  joyX = 0;
-    						  while(rxBuffer[j%ESPRXBUFFERSIZE] != 'Y') {
-    							  joyX = (joyX*10) + (rxBuffer[j%ESPRXBUFFERSIZE]-48);
+    						  float tSpeedOld = tSpeed;
+    						  tSpeed = 0;
+    						  while(rxBuffer[j%ESPRXBUFFERSIZE] != 'A') {
+    							  if((j - (rxBufferHead + i + 5) > 5) || (j%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
+    								  tSpeed = tSpeedOld;
+    								  break;
+    							  }
+    							  tSpeed = (tSpeed*10) + (rxBuffer[j%ESPRXBUFFERSIZE]-48);
     							  j++;
-    							  if(j - (rxBufferHead + i + 5) >= 4) break;
+    							  if(rxBuffer[j%ESPRXBUFFERSIZE] == '.') {
+    								  j++;
+    								  uint8_t fp = 1;
+    								  while (rxBuffer[j%ESPRXBUFFERSIZE] != 'A') {
+    	    							  if((j - (rxBufferHead + i + 5) > 5) || (j%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
+    	    								  tSpeed = tSpeedOld;
+    	    								  break;
+    	    							  }
+    									  tSpeed = tSpeed + (rxBuffer[j%ESPRXBUFFERSIZE]-48)/pow(10,fp);
+    	    							  j++;
+    	    							  fp++;
+    								  }
+    							  }
     						  }
     						  if(rxBuffer[(rxBufferHead + i + 5)%ESPRXBUFFERSIZE] == '-') {
-    							  joyX = joyX * (-1);
+    							  tSpeed = tSpeed * (-1);
     						  }
 
-    						  if(rxBuffer[j%ESPRXBUFFERSIZE] == 'Y') {
+    						  if(rxBuffer[j%ESPRXBUFFERSIZE] == 'A') {
     							  uint16_t k = j + 1;
         						  if(rxBuffer[k%ESPRXBUFFERSIZE] == '-') {
         							  k++;
         						  }
-        						  joyY = 0;
+        						  float aSpeedOld = aSpeed;
+        						  aSpeed = 0;
         						  while(rxBuffer[k%ESPRXBUFFERSIZE] != '_') {
-        							  joyY = (joyY*10) + (rxBuffer[k%ESPRXBUFFERSIZE]-48);
+        							  if((k - (j + 1) >= 5) || (k%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
+        								  aSpeed = aSpeedOld;
+        								  break;
+        							  }
+        							  aSpeed = (aSpeed*10) + (rxBuffer[k%ESPRXBUFFERSIZE]-48);
         							  k++;
-        							  if(k - (j + 1) >= 4) break;
+        							  if(rxBuffer[k%ESPRXBUFFERSIZE] == '.') {
+        								  k++;
+        								  uint8_t fp = 1;
+        								  while(rxBuffer[k%ESPRXBUFFERSIZE] != '_') {
+        									  if((k - (j + 1) >= 5) || (k%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
+        										  aSpeed = aSpeedOld;
+        										  break;
+        									  }
+        									  aSpeed = aSpeed + (rxBuffer[k%ESPRXBUFFERSIZE]-48)/pow(10,fp);
+        									  k++;
+        									  fp++;
+        								  }
+        							  }
         						  }
         						  if(rxBuffer[(j + 1)%ESPRXBUFFERSIZE] == '-') {
-        							  joyY = joyY * (-1);
+        							  aSpeed = aSpeed * (-1);
         						  }
     						  }
 
-    						  if(joyX < 0) {
-    							  __asm__ volatile("NOP");
-    						  }
     					  }
     				  }
     			  }
     		  }
     	  }
       }
+
+//      if((tSpeed != 0) || (aSpeed != 0)) {
+//    	  __asm__ volatile("NOP");
+//      }
 
       // Update the buffer head index
       rxBufferHead = ((rxBufferHead + receivedBytes) % ESPRXBUFFERSIZE);
@@ -1153,8 +1200,8 @@ void espCommunication(void const * argument)
     	                         "Host: 192.168.137.1\r\n"
     	                         "Content-Type: application/json\r\n"
 //    	                         "Content-Length: %d\r\n\r\n"
-    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\"}",
-								 avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY);
+    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\", \"tSpeed\": \"%f\", \"aSpeed\": \"%f\", \"rReqValue\": \"%d\", \"lReqValue\": \"%d\"}",
+								 avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY, tSpeed, aSpeed, SoftPwmR.reqValue, SoftPwmL.reqValue);
 
     	    // Calculate the number of characters in the POST request
     	    int postRequestLength = strlen(txBuffer);
@@ -1217,11 +1264,11 @@ void encoderR(void const * argument)
 	  if (!EncoderR.posCntUpdate) {
 		  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
 	  } else {
-		  if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
-			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
-		  } else {
-			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
-		  }
+//		  if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
+//			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+//		  } else {
+//			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+//		  }
 		  EncoderR.posCntUpdate = 0;
 	  }
 //	  taskYIELD();
@@ -1261,11 +1308,11 @@ void encoderL(void const * argument)
 	  if (!EncoderL.posCntUpdate) {
 		  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(32*1000*60)/256;
 	  } else {
-		  if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
-			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
-		  } else {
-			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
-		  }
+//		  if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
+//			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
+//		  } else {
+//			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
+//		  }
 		  EncoderL.posCntUpdate = 0;
 	  }
 //	  taskYIELD();
@@ -1296,12 +1343,21 @@ void softwarePWMR(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	  float reqValueTemp = MAXRPM*((float)joyY/100);
-	  if(joyX > 0) {
-		  reqValueTemp = reqValueTemp - reqValueTemp*((float)joyX/100);
-	  }
+//	  float reqValueTemp = MAXRPM*((float)joyY/100);
+//	  if(joyX > 0) {
+//		  reqValueTemp = reqValueTemp - reqValueTemp*((float)joyX/100);
+//	  }
+//	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
+//		  reqValueTemp = 0;
+//	  }
+	  float rWheelSpeed = tSpeed - aSpeed*DISBETWHEELS/2;
+	  float reqValueTemp = (rWheelSpeed*60)/(2*3.14*RWHEEL);
 	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
 		  reqValueTemp = 0;
+	  } else if((reqValueTemp > MAXRPM)) {
+		  reqValueTemp = MAXRPM;
+	  } else if((reqValueTemp < -MAXRPM)) {
+		  reqValueTemp = -MAXRPM;
 	  }
 	  SoftPwmR.reqValue = (int16_t)reqValueTemp;
 
@@ -1312,13 +1368,17 @@ void softwarePWMR(void const * argument)
 	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
 	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
 	  if((iValue <= 50) && (iValue >= -50)) {
-		  iValue = 0;
+		  sumValue = pValue;
+	  } else {
+		  sumValue = (pValue + iValue);
 	  }
-	  sumValue = (pValue + iValue);
-	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
-	  if(pwmFloatValue > 100) pwmFloatValue = 100;
-	  else if(pwmFloatValue < -100) pwmFloatValue = -100;
+	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*PWMVAL);
+	  if(pwmFloatValue > PWMVAL) pwmFloatValue = PWMVAL;
+	  else if(pwmFloatValue < -PWMVAL) pwmFloatValue = -PWMVAL;
 	  SoftPwmR.pwmValue = (int16_t)pwmFloatValue;
+	  if(SoftPwmR.reqValue = 0) {
+		  SoftPwmR.pwmValue -= 1;
+	  }
 //	  if(SoftPwmR.pwmValue > 100) SoftPwmR.pwmValue = 100;
 //	  else if(SoftPwmR.pwmValue < -100) SoftPwmR.pwmValue = -100;
 
@@ -1359,12 +1419,21 @@ void softwarePWML(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	  float reqValueTemp = MAXRPM*((float)joyY/100);
-	  if(joyX < 0) {
-		  reqValueTemp = reqValueTemp - reqValueTemp*(-(float)joyX/100);
-	  }
+//	  float reqValueTemp = MAXRPM*((float)joyY/100);
+//	  if(joyX < 0) {
+//		  reqValueTemp = reqValueTemp - reqValueTemp*(-(float)joyX/100);
+//	  }
+//	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
+//		  reqValueTemp = 0;
+//	  }
+	  float lWheelSpeed = tSpeed + aSpeed*DISBETWHEELS/2;
+	  float reqValueTemp = (lWheelSpeed*60)/(2*3.14*RWHEEL);
 	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
 		  reqValueTemp = 0;
+	  } else if((reqValueTemp > MAXRPM)) {
+		  reqValueTemp = MAXRPM;
+	  } else if((reqValueTemp < -MAXRPM)) {
+		  reqValueTemp = -MAXRPM;
 	  }
 	  SoftPwmL.reqValue = (int16_t)reqValueTemp;
 
@@ -1375,13 +1444,17 @@ void softwarePWML(void const * argument)
 	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
 	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
 	  if((iValue <= 50) && (iValue >= -50)) {
-		  iValue = 0;
+		  sumValue = pValue;
+	  } else {
+		  sumValue = (pValue + iValue);
 	  }
-	  sumValue = (pValue + iValue);
-	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*100);
-	  if(pwmFloatValue > 100) pwmFloatValue = 100;
-	  else if(pwmFloatValue < -100) pwmFloatValue = -100;
+	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*PWMVAL);
+	  if(pwmFloatValue > PWMVAL) pwmFloatValue = PWMVAL;
+	  else if(pwmFloatValue < -PWMVAL) pwmFloatValue = -PWMVAL;
 	  SoftPwmL.pwmValue = (int16_t)pwmFloatValue;
+	  if(SoftPwmL.reqValue = 0) {
+		  SoftPwmL.pwmValue -= 1;
+	  }
 //	  if(SoftPwmL.pwmValue > 100) SoftPwmL.pwmValue = 100;
 //	  else if(SoftPwmL.pwmValue < -100) SoftPwmL.pwmValue = -100;
 

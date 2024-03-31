@@ -97,11 +97,18 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
+	GPIOC->ODR &= ~GPIO_ODR_13;
+	uint16_t cntLed = 0;
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
+	  if(cntLed == 60000) {
+		  GPIOC->ODR ^= GPIO_ODR_14;
+	  }
+	  cntLed++;
+
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }

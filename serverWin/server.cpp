@@ -9,6 +9,9 @@
 #include <atomic>
 #include <unordered_map>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <math.h>
 
 void CleanupThreads(std::vector<std::thread>& threads);
 int sendResponse(SOCKET clientSocket, const std::string& response);
@@ -29,8 +32,13 @@ std::string encoderRRpm;
 std::string encoderLRpm;
 std::string softPwmRValue;
 std::string softPwmLValue;
-std::string joyX;
-std::string joyY;
+std::string joyX = "0";
+std::string joyY = "0";
+#define MAXRPM 2000
+#define RWHEEL 0.0175
+#define RCMATH 0.035
+float aSpeed;
+float tSpeed;
 
 
 int main() {
@@ -133,7 +141,7 @@ void HandleClient(SOCKET clientSocket) {
 
     // Sleep for x milliseconds (x*10^-3 seconds)
     std::cout << "\033[36mSleeping for x ms\033[0m" << std::endl;
-    sleep_for(std::chrono::milliseconds(75));
+    sleep_for(std::chrono::milliseconds(115));
 
     // Check the flag and start sendThread if needed
     std::cout << "\033[36mChecking startSendThread flag\033[0m" << std::endl;
@@ -189,7 +197,7 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                 sendResponse(clientSocket, httpResponse);
             } else if(strstr(buff, "GET /app") != NULL) {
                 SendHtmlFile(clientSocket, "index.html");
-            } else if(strstr(buff, "GET /robot HTTP/1.1\r\nHost: 192.168.137.1") != NULL) {
+            } else if(strstr(buff, "GET /robot") != NULL) { // HTTP/1.1\r\nHost: 192.168.137.1
                 // Set the flag to start sendThread
                 threadFlags[ThreadId] |= 0x1;
 
@@ -283,10 +291,46 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
 
                         size_t joyYValuePos = jsonContent.find("\"joyY\":");
                         if (joyYValuePos != std::string::npos) {
-                            size_t joyYValueEnd = jsonContent.find("}", joyYValuePos);
+                            size_t joyYValueEnd = jsonContent.find(",", joyYValuePos);
                             if (joyYValueEnd != std::string::npos) {
                                 std::string joyYValue = jsonContent.substr(joyYValuePos + 7, joyYValueEnd - (joyYValuePos + 7));
                                 std::cout << "\033[33mjoyY: " << joyYValue << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t tSpeedValuePos = jsonContent.find("\"tSpeed\":");
+                        if (tSpeedValuePos != std::string::npos) {
+                            size_t tSpeedValueEnd = jsonContent.find(",", tSpeedValuePos);
+                            if (tSpeedValueEnd != std::string::npos) {
+                                std::string tSpeedValue = jsonContent.substr(tSpeedValuePos + 9, tSpeedValueEnd - (tSpeedValuePos + 9));
+                                std::cout << "\033[33mtSpeed: " << tSpeedValue << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t aSpeedValuePos = jsonContent.find("\"aSpeed\":");
+                        if (aSpeedValuePos != std::string::npos) {
+                            size_t aSpeedValueEnd = jsonContent.find(",", aSpeedValuePos);
+                            if (aSpeedValueEnd != std::string::npos) {
+                                std::string aSpeedValue = jsonContent.substr(aSpeedValuePos + 9, aSpeedValueEnd - (aSpeedValuePos + 9));
+                                std::cout << "\033[33maSpeed: " << aSpeedValue << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t rReqValuePos = jsonContent.find("\"rReqValue\":");
+                        if (rReqValuePos != std::string::npos) {
+                            size_t rReqValueEnd = jsonContent.find(",", rReqValuePos);
+                            if (rReqValueEnd != std::string::npos) {
+                                std::string rReqValue = jsonContent.substr(rReqValuePos + 12, rReqValueEnd - (rReqValuePos + 12));
+                                std::cout << "\033[33mrReqValue: " << rReqValue << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t lReqValuePos = jsonContent.find("\"lReqValue\":");
+                        if (lReqValuePos != std::string::npos) {
+                            size_t lReqValueEnd = jsonContent.find("}", lReqValuePos);
+                            if (lReqValueEnd != std::string::npos) {
+                                std::string lReqValue = jsonContent.substr(lReqValuePos + 12, lReqValueEnd - (lReqValuePos + 12));
+                                std::cout << "\033[33mlReqValue: " << lReqValue << "\033[0m" << std::endl;
                             }
                         }
                     }
@@ -344,13 +388,46 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
 
 void SendData(SOCKET clientSocket) {
     while (true) {
+        std::cout << "joyX: " << joyX << ", joyY: " << joyY << std::endl;
 
-        std::string message = "JOY_X" + joyX + "Y" + joyY + "_";
+        tSpeed = ((std::stoi(joyY)*MAXRPM/100)*2*3.14*RWHEEL)/60;
+        if(tSpeed >= 0) {
+            aSpeed = ((2*3.14*RWHEEL*MAXRPM)/60)*2*3.14/(2*3.14*RCMATH) * std::pow(((float)std::stoi(joyX)/100), 3);
+        } else {
+            aSpeed = -((2*3.14*RWHEEL*MAXRPM)/60)*2*3.14/(2*3.14*RCMATH) * std::pow(((float)std::stoi(joyX)/100), 3);
+        }
+
+        // Convert tSpeed to string with 2 decimal places
+        std::ostringstream tSpeedStream;
+        if(std::abs(tSpeed) >= 100) {
+            tSpeedStream << std::fixed << std::setprecision(0) << tSpeed;
+        } else if(std::abs(tSpeed) >= 10) {
+            tSpeedStream << std::fixed << std::setprecision(1) << tSpeed;
+        } else {
+            tSpeedStream << std::fixed << std::setprecision(2) << tSpeed;
+        }
+        std::string tSpeedStr = tSpeedStream.str();
+        // std::string tSpeedStr = std::to_string((int)(tSpeed*100));
+
+        // Convert aSpeed to string with 2 decimal places
+        std::ostringstream aSpeedStream;
+        if(std::abs(aSpeed) >= 100) {
+            aSpeedStream << std::fixed << std::setprecision(0) << aSpeed;
+        } else if(std::abs(aSpeed) >= 10) {
+            aSpeedStream << std::fixed << std::setprecision(1) << aSpeed;
+        } else {
+            aSpeedStream << std::fixed << std::setprecision(2) << aSpeed;
+        }
+        std::string aSpeedStr = aSpeedStream.str();
+
+        std::cout << "JOY_T" << tSpeedStr  << "A" << aSpeedStr << "_" << std::endl;
+        // std::string message = "JOY_X" + joyX + "Y" + joyY + "_";
+        std::string message = "JOY_T" + tSpeedStr + "A" + aSpeedStr + "_";
         if(sendResponse(clientSocket, message) != 0) {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(81));
+        std::this_thread::sleep_for(std::chrono::milliseconds(101));
     }
 }
 
