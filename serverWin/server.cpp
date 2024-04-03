@@ -210,7 +210,9 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                     "\"encoderRRpm\": " + encoderRRpm + ","
                     "\"encoderLRpm\": " + encoderLRpm + ","
                     "\"softPwmRValue\": " + softPwmRValue + ","
-                    "\"softPwmLValue\": " + softPwmLValue +
+                    "\"softPwmLValue\": " + softPwmLValue + ","
+                    "\"tSpeed\": " + std::to_string(tSpeed) + ","
+                    "\"aSpeed\": " + std::to_string(aSpeed) +
                     "}";
                 std::cout << "Response Data: " << responseData << std::endl;  // Debug output
                 std::string contentLengthHeader = "Content-Length: " + std::to_string(responseData.length()) + "\n";
@@ -422,12 +424,12 @@ void SendData(SOCKET clientSocket) {
 
         std::cout << "JOY_T" << tSpeedStr  << "A" << aSpeedStr << "_" << std::endl;
         // std::string message = "JOY_X" + joyX + "Y" + joyY + "_";
-        std::string message = "JOY_T" + tSpeedStr + "A" + aSpeedStr + "_";
+        std::string message = "TSP" + tSpeedStr + "_ASP" + aSpeedStr + "_";
         if(sendResponse(clientSocket, message) != 0) {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(101));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500)); //101
     }
 }
 

@@ -16,6 +16,8 @@
             const encoderLRpmSpan = document.getElementById('encoderLRpm');
             const softPwmRValueSpan = document.getElementById('softPwmRValue');
             const softPwmLValueSpan = document.getElementById('softPwmLValue');
+            const tSpeedSpan = document.getElementById('tSpeed');
+            const aSpeedSpan = document.getElementById('aSpeed');
 
             function updateSpans(data) {
                 console.log(data);
@@ -24,6 +26,8 @@
                 encoderLRpmSpan.innerHTML = data.encoderLRpm || 'N/A';
                 softPwmRValueSpan.innerHTML = data.softPwmRValue || 'N/A';
                 softPwmLValueSpan.innerHTML = data.softPwmLValue || 'N/A';
+                tSpeedSpan.innerHTML = data.tSpeed || 'N/A';
+                aSpeedSpan.innerHTML = data.aSpeed || 'N/A';
             }
 
             function fetchData() {
@@ -135,6 +139,8 @@
                     <li class="list-group-item"><span><i class="fa-solid fa-compass"></i> Direzione: </span><span id="joy3Direzione"></span></li>
                     <li class="list-group-item"><span><i class="fa-solid fa-crosshairs"></i> X: </span><span id="joy3X"></span></li>
                     <li class="list-group-item"><span><i class="fa-solid fa-crosshairs"></i> Y: </span><span id="joy3Y"></span></li>
+                    <li class="list-group-item"><span><i class="fa-solid fa-angles-right"></i> Tangential velocity: </span><span id="tSpeed"></span></li>
+                    <li class="list-group-item"><span><i class="fa-solid fa-rotate"></i> Angular velocity: </span><span id="aSpeed"></span></li>
                 </ul>
             </div>
         </div>
@@ -182,6 +188,10 @@
             } else if (limitedJoy3YValue < -100) {
                 limitedJoy3YValue = -100;
             }
+
+            // const MAXRPM = 2000;
+            // const RWHEEL = 0.0175;
+            // let tSpeed = ((limitedJoy3YValue*MAXRPM/100)*2*Math.PI*RWHEEL)/60;
 
             // Create JSON payload
             const jsonData = {
