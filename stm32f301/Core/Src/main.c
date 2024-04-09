@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <espATcommands.h>
+#include <adxl345.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,7 +50,6 @@ ADC_HandleTypeDef hadc1;
 SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim15;
-TIM_HandleTypeDef htim16;
 TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart3;
@@ -64,9 +64,11 @@ osThreadId EncoderRHandle;
 osThreadId EncoderLHandle;
 osThreadId SoftwarePwmRHandle;
 osThreadId SoftwarePwmLHandle;
+osThreadId AccelerometerHandle;
 /* USER CODE BEGIN PV */
 volatile uint16_t batteryVoltage[10]; // Battery voltage.
 uint16_t avrBatVoltage;
+uint8_t BatChargeState;
 EventGroupHandle_t pc13EventGroup;
 EventGroupHandle_t pc14EventGroup;
 
@@ -80,7 +82,8 @@ uint16_t softCounterValue;
 char txBuffer[ESPTXBUFFERSIZE];
 volatile char rxBuffer[ESPRXBUFFERSIZE];
 volatile uint16_t rxBufferHead;
-char rxBufferCopy[128];
+uint8_t receivedBytes = 0;
+char rxBufferCopy[256];
 
 TimerHandle_t timerForDataSending;
 EventGroupHandle_t timerFdsEventGroup;
@@ -89,6 +92,12 @@ int8_t joyX;
 int8_t joyY;
 float tSpeed;
 float aSpeed;
+
+int16_t accelValueR[3];
+int16_t accelValueL[3];
+
+uint32_t debugVar;
+uint32_t debugVar2;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -99,7 +108,6 @@ static void MX_ADC1_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM17_Init(void);
-static void MX_TIM16_Init(void);
 static void MX_TIM15_Init(void);
 void psMeasure(void const * argument);
 void pc13LedCntrl(void const * argument);
@@ -109,13 +117,13 @@ void encoderR(void const * argument);
 void encoderL(void const * argument);
 void softwarePWMR(void const * argument);
 void softwarePWML(void const * argument);
+void accelerometer(void const * argument);
 
 /* USER CODE BEGIN PFP */
 void ADC1_configuration(void);
 void TIM1_configuration(void);
 void TIM2_configuration(void);
 void TIM15_additional_configuration(void);
-void TIM16_additional_configuration(void);
 void TIM17_additional_configuration(void);
 void USART3_additional_configuration(void);
 
@@ -136,9 +144,11 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	avrBatVoltage = 0;
+	BatChargeState = 0;
 
 	EncoderR.timeNew = 0;
 	EncoderR.timeOld = 0;
+	EncoderR.timeUpdate = 0;
 	EncoderR.positionNew = 0;
 	EncoderR.positionOld = 0;
 	EncoderR.posCntUpdate = 0;
@@ -146,6 +156,7 @@ int main(void)
 
 	EncoderL.timeNew = 0;
 	EncoderL.timeOld = 0;
+	EncoderL.timeUpdate = 0;
 	EncoderL.positionNew = 0;
 	EncoderL.positionOld = 0;
 	EncoderL.posCntUpdate = 0;
@@ -173,6 +184,12 @@ int main(void)
 	tSpeed = 0;
 	aSpeed = 0;
 
+	memset(accelValueR, '0', sizeof(accelValueR));
+	memset(accelValueL, '0', sizeof(accelValueL));
+
+	debugVar = 0;
+	debugVar2 = 0;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -198,7 +215,6 @@ int main(void)
   MX_SPI2_Init();
   MX_USART3_UART_Init();
   MX_TIM17_Init();
-  MX_TIM16_Init();
   MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
   ADC1_configuration();
@@ -206,7 +222,6 @@ int main(void)
   TIM2_configuration();
   TIM17_additional_configuration();
   TIM15_additional_configuration();
-  TIM16_additional_configuration();
   USART3_additional_configuration();
 
   kToRpm = (32*1000*60)/256;
@@ -226,7 +241,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
-  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(211), pdTRUE, 1, timerForSendDataCallback); //321
+  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(80), pdTRUE, 1, timerForSendDataCallback); //211
   xTimerStart(timerForDataSending, portMAX_DELAY);
   /* USER CODE END RTOS_TIMERS */
 
@@ -266,6 +281,10 @@ int main(void)
   /* definition and creation of SoftwarePwmL */
   osThreadDef(SoftwarePwmL, softwarePWML, osPriorityNormal, 0, 156);
   SoftwarePwmLHandle = osThreadCreate(osThread(SoftwarePwmL), NULL);
+
+  /* definition and creation of Accelerometer */
+  osThreadDef(Accelerometer, accelerometer, osPriorityNormal, 0, 96);
+  AccelerometerHandle = osThreadCreate(osThread(Accelerometer), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -323,10 +342,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_TIM15|RCC_PERIPHCLK_TIM16
-                              |RCC_PERIPHCLK_TIM17|RCC_PERIPHCLK_ADC1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_TIM15|RCC_PERIPHCLK_TIM17
+                              |RCC_PERIPHCLK_ADC1;
   PeriphClkInit.Tim15ClockSelection = RCC_TIM15CLK_HCLK;
-  PeriphClkInit.Tim16ClockSelection = RCC_TIM16CLK_HCLK;
   PeriphClkInit.Tim17ClockSelection = RCC_TIM17CLK_HCLK;
   PeriphClkInit.Adc1ClockSelection = RCC_ADC1PLLCLK_DIV2;
 
@@ -480,38 +498,6 @@ static void MX_TIM15_Init(void)
 }
 
 /**
-  * @brief TIM16 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM16_Init(void)
-{
-
-  /* USER CODE BEGIN TIM16_Init 0 */
-
-  /* USER CODE END TIM16_Init 0 */
-
-  /* USER CODE BEGIN TIM16_Init 1 */
-
-  /* USER CODE END TIM16_Init 1 */
-  htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 63;
-  htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 10;
-  htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim16.Init.RepetitionCounter = 0;
-  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM16_Init 2 */
-
-  /* USER CODE END TIM16_Init 2 */
-
-}
-
-/**
   * @brief TIM17 Initialization Function
   * @param None
   * @retval None
@@ -559,7 +545,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
+  huart3.Init.BaudRate = 230400;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -767,8 +753,6 @@ void TIM1_configuration(void)
 
 	TIM1->PSC = 7; //7+1 = 8
 
-//	TIM1->RCR = 0xFFFF; // Repetition counter value
-
     // Enable the TIM1 interrupt
     NVIC_EnableIRQ(TIM1_UP_TIM16_IRQn);
 
@@ -829,12 +813,6 @@ void TIM15_additional_configuration(void)
 	TIM15->CR1 |= TIM_CR1_CEN;
 }
 
-void TIM16_additional_configuration(void)
-{
-	TIM16->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
-//	TIM16->CR1 |= TIM_CR1_CEN;
-}
-
 void TIM17_additional_configuration(void)
 {
 	TIM17->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
@@ -850,7 +828,6 @@ void USART3_additional_configuration(void)
 
 	DMA1_Channel3->CCR |= DMA_CCR_MINC;
 	DMA1_Channel3->CCR |= DMA_CCR_CIRC;
-//		DMA1_Channel3->CCR |= DMA_CCR_TCIE;
 	DMA1_Channel3->CCR &= ~DMA_CCR_TCIE;
 	DMA1_Channel3->CCR &= ~DMA_CCR_HTIE;
 	DMA1_Channel3->CCR &= ~DMA_CCR_TEIE;
@@ -896,8 +873,7 @@ void timerForSendDataCallback(TimerHandle_t xTimer)
 void psMeasure(void const * argument)
 {
   /* USER CODE BEGIN 5 */
-	char measureResult[30];
-	memset(measureResult, ' ', sizeof(measureResult));
+
   /* Infinite loop */
   for(;;)
   {
@@ -907,24 +883,21 @@ void psMeasure(void const * argument)
     	avrBatVoltage += batteryVoltage[i];
     }
     avrBatVoltage = avrBatVoltage / (sizeof(batteryVoltage)/sizeof(batteryVoltage[0]));
+    BatChargeState = ((float)(avrBatVoltage - BATMINV)/(BATMAXV - BATMINV))*100;
+
     if(avrBatVoltage > BATMAXV) {
-    	memset(measureResult, ' ', sizeof(measureResult));
-    	strcpy(measureResult, "Voltage > MAX");
     	xEventGroupClearBits(pc13EventGroup, 0xFFFFFF);
     	xEventGroupSetBits(pc13EventGroup, OVERVOLTAGEONLED);
     	xEventGroupClearBits(pc14EventGroup, 0xFFFFFF);
     	xEventGroupSetBits(pc14EventGroup, OVERVOLTAGEONLED);
     	__asm__ volatile("NOP");
     } else if(avrBatVoltage < BATMINV) {
-    	memset(measureResult, ' ', sizeof(measureResult));
-    	strcpy(measureResult, "Voltage < MIN");
     	xEventGroupClearBits(pc13EventGroup, 0xFFFFFF);
     	xEventGroupSetBits(pc13EventGroup, UNDERVOLTAGEONLED);
     	xEventGroupClearBits(pc14EventGroup, 0xFFFFFF);
     	xEventGroupSetBits(pc14EventGroup, UNDERVOLTAGEONLED);
     	__asm__ volatile("NOP");
     } else {
-    	memset(measureResult, ' ', sizeof(measureResult));
     	xEventGroupClearBits(pc13EventGroup, 0xFFFFFF);
     	xEventGroupClearBits(pc14EventGroup, 0xFFFFFF);
     	__asm__ volatile("NOP");
@@ -1017,31 +990,25 @@ void pc14LedCntrl(void const * argument)
 void espCommunication(void const * argument)
 {
   /* USER CODE BEGIN espCommunication */
-	vTaskDelay( pdMS_TO_TICKS( 100 ) );
+	vTaskDelay( pdMS_TO_TICKS( 600 ) );
 	taskENTER_CRITICAL();
-	  GPIOB->ODR |= (1<<1);
-	  GPIOB->ODR |= (1<<2);
-	  txBuffer[0] = 'A';
-	  txBuffer[1] = 'T';
-	  txBuffer[2] = '\r';
-	  txBuffer[3] = '\n';
+	  GPIOB->ODR |= (1<<1); //RST_ESP
+	  GPIOB->ODR |= (1<<2); //EN_ESP
+	  sprintf(txBuffer, "AT\r\n");
 	  char controlAnsw[] = "AT\r\r\n\r\nOK\r\n";
 	  while(strcmp(rxBuffer, controlAnsw) != 0) {
-		  for(uint16_t i = 0; i < sizeof(rxBuffer); i++) {
-			  rxBuffer[i] = 0;
-		  }
-		  HAL_UART_Transmit(&huart3, (uint8_t*)txBuffer, 4, 250);
-		  HAL_UART_Receive(&huart3, (uint8_t*)rxBuffer, sizeof(rxBuffer), 250);
+		  HAL_UART_Transmit(&huart3, (uint8_t*)txBuffer, strlen(txBuffer), 250);
+		  HAL_UART_Receive(&huart3, (uint8_t*)rxBuffer, strlen(controlAnsw), 250);
 		  vTaskDelay( pdMS_TO_TICKS( 100 ) );
 		  __asm__ volatile("NOP");
 	  }
 
-	  sendATCommand(&huart3, "AT+CWMODE_CUR=1\r\n", 17 , 250);
+	  sprintf(txBuffer, "AT+CWMODE_CUR=1\r\n");
+	  sendATCommand(&huart3, "AT+CWMODE_CUR=1\r\n", strlen(txBuffer) , 250);
 	  receiveAnswer(&huart3, rxBuffer, sizeof(rxBuffer), 250);
 
-	  memset(txBuffer, '\0', sizeof(txBuffer));
-	  strcpy(txBuffer, "AT+CWJAP_CUR=\"RedmiGiGidra\",\"DimaDimaDimon\"\r\n");
-	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 1000);
+	  sprintf(txBuffer, "AT+CWJAP_CUR=\"RedmiGiGidra\",\"DimaDimaDimon\"\r\n");
+	  sendATCommand(&huart3, txBuffer, strlen(txBuffer), 1000);
 	  receiveAnswer(&huart3, rxBuffer, sizeof(rxBuffer), 10000);
 
 	  taskEXIT_CRITICAL();
@@ -1056,29 +1023,21 @@ void espCommunication(void const * argument)
 	  sendATCommand(&huart3, txBuffer, strlen(txBuffer), 250);
 	  vTaskDelay( pdMS_TO_TICKS( 100 ) );
 
-	  memset(txBuffer, '\0', sizeof(txBuffer));
-	  strcpy(txBuffer, "AT+CIPCLOSE\r\n");
-	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
+	  sprintf(txBuffer, "AT+CIPCLOSE\r\n");
+	  sendATCommand(&huart3, txBuffer, strlen(txBuffer), 250);
 	  vTaskDelay( pdMS_TO_TICKS( 250 ) );
 
-	  memset(txBuffer, '\0', sizeof(txBuffer));
-	  strcpy(txBuffer, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
-	  sendATCommand(&huart3, txBuffer, sizeof(txBuffer), 250);
+	  sprintf(txBuffer, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
+	  sendATCommand(&huart3, txBuffer, strlen(txBuffer), 250);
 	  vTaskDelay( pdMS_TO_TICKS( 40 ) );
 
 	  memset(txBuffer, '\0', sizeof(txBuffer));
-		// Create the entire GET request string
-		sprintf(txBuffer, "GET /robot HTTP/1.1\r\n"
+      // Creating the entire GET request string
+	  sprintf(txBuffer, "GET /robot HTTP/1.1\r\n"
 						  "Host: 192.168.137.1\r\n");
-		int getRequestLength = strlen(txBuffer);
-  	  uint8_t char_number_get = 0;
-  	  int temp_get = getRequestLength;
-  	  while(temp_get != 0){
-  		  temp_get = temp_get / 10;
-  		  char_number_get++;
-  	  }
-  	  char pDataBuf[13+char_number_get];
-  	  sprintf(pDataBuf, "AT+CIPSEND=%d\r\n", getRequestLength);
+	  int getRequestLength = strlen(txBuffer);
+	  char pDataBuf[20];
+	  sprintf(pDataBuf, "AT+CIPSEND=%d\r\n", getRequestLength);
 	  sendATCommand(&huart3, pDataBuf, sizeof(pDataBuf), 250);
 	  vTaskDelay( pdMS_TO_TICKS( 10 ) );
 	  sendATCommand(&huart3, txBuffer, getRequestLength, 250);
@@ -1091,148 +1050,92 @@ void espCommunication(void const * argument)
   /* Infinite loop */
   for(;;)
   {
+	  debugVar = 1;
 	  // Calculate the number of bytes received since the last processing
-	  uint8_t receivedBytes = 0;
+//	  uint8_t receivedBytes = 0;
 	  if((ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR) < rxBufferHead) {
 		  receivedBytes = (ESPRXBUFFERSIZE - rxBufferHead + ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR) % ESPRXBUFFERSIZE;
 	  } else {
 		  receivedBytes = (ESPRXBUFFERSIZE - DMA1_Channel3->CNDTR -rxBufferHead) % ESPRXBUFFERSIZE;
 	  }
 
-	  memset(rxBufferCopy, '\0', sizeof(rxBufferCopy));
+	  uint16_t sizeRxBufCopy = sizeof(rxBufferCopy);
+	  memset(rxBufferCopy, '\0', sizeRxBufCopy);
 	  for(uint16_t i = 0; i < receivedBytes; i++) {
-		  rxBufferCopy[i] = rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE];
+		  rxBufferCopy[i] = rxBuffer[(rxBufferHead + i)%sizeRxBufCopy];
 	  }
 
+	  debugVar = 5;
+
 	  // Process the received data
-      for (uint16_t i = 0; i < receivedBytes; i++) {
-    	  if(rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE] == 'J'){
-    		  if(rxBuffer[(rxBufferHead + i + 1)%ESPRXBUFFERSIZE] == 'O') {
-    			  if(rxBuffer[(rxBufferHead + i + 2)%ESPRXBUFFERSIZE] == 'Y') {
-    				  if(rxBuffer[(rxBufferHead + i + 3)%ESPRXBUFFERSIZE] == '_') {
-    					  if(rxBuffer[(rxBufferHead + i + 4)%ESPRXBUFFERSIZE] == 'T') {
-    						  uint16_t j = rxBufferHead + i + 5;
-    						  if(rxBuffer[j%ESPRXBUFFERSIZE] == '-') {
-    							  j++;
-    						  }
-    						  float tSpeedOld = tSpeed;
-    						  tSpeed = 0;
-    						  while(rxBuffer[j%ESPRXBUFFERSIZE] != 'A') {
-    							  if((j - (rxBufferHead + i + 5) > 5) || (j%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
-    								  tSpeed = tSpeedOld;
-    								  break;
-    							  }
-    							  tSpeed = (tSpeed*10) + (rxBuffer[j%ESPRXBUFFERSIZE]-48);
-    							  j++;
-    							  if(rxBuffer[j%ESPRXBUFFERSIZE] == '.') {
-    								  j++;
-    								  uint8_t fp = 1;
-    								  while (rxBuffer[j%ESPRXBUFFERSIZE] != 'A') {
-    	    							  if((j - (rxBufferHead + i + 5) > 5) || (j%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
-    	    								  tSpeed = tSpeedOld;
-    	    								  break;
-    	    							  }
-    									  tSpeed = tSpeed + (rxBuffer[j%ESPRXBUFFERSIZE]-48)/pow(10,fp);
-    	    							  j++;
-    	    							  fp++;
-    								  }
-    							  }
-    						  }
-    						  if(rxBuffer[(rxBufferHead + i + 5)%ESPRXBUFFERSIZE] == '-') {
-    							  tSpeed = tSpeed * (-1);
-    						  }
+	  for(uint16_t i = 0; i < receivedBytes; i++) {
+		  debugVar = 6;
+		  debugVar2 = i;
+		  if((rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE] == 'T') &&
+		     (rxBuffer[(rxBufferHead + i + 1)%ESPRXBUFFERSIZE] == 'S') &&
+			 (rxBuffer[(rxBufferHead + i + 2)%ESPRXBUFFERSIZE] == 'P')) {
+			  if(rxBuffer[(rxBufferHead + i + 3)%ESPRXBUFFERSIZE] == '-') {
+				  if(rxBuffer[(rxBufferHead + i + 8)%ESPRXBUFFERSIZE] != '_') continue;
+			  } else {
+				  if(rxBuffer[(rxBufferHead + i + 7)%ESPRXBUFFERSIZE] != '_') continue;
+			  }
+			  tSpeed = parseFloat(rxBuffer, ((rxBufferHead + i + 3)%ESPRXBUFFERSIZE));
+		  }
+		  debugVar = 10;
+		  if((rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE] == 'A') &&
+		     (rxBuffer[(rxBufferHead + i + 1)%ESPRXBUFFERSIZE] == 'S') &&
+			 (rxBuffer[(rxBufferHead + i + 2)%ESPRXBUFFERSIZE] == 'P')) {
+			  if(rxBuffer[(rxBufferHead + i + 3)%ESPRXBUFFERSIZE] == '-') {
+				  if(rxBuffer[(rxBufferHead + i + 8)%ESPRXBUFFERSIZE] != '_') continue;
+			  } else {
+				  if(rxBuffer[(rxBufferHead + i + 7)%ESPRXBUFFERSIZE] != '_') continue;
+			  }
+			  aSpeed = parseFloat(rxBuffer, ((rxBufferHead + i + 3)%ESPRXBUFFERSIZE));
+		  }
 
-    						  if(rxBuffer[j%ESPRXBUFFERSIZE] == 'A') {
-    							  uint16_t k = j + 1;
-        						  if(rxBuffer[k%ESPRXBUFFERSIZE] == '-') {
-        							  k++;
-        						  }
-        						  float aSpeedOld = aSpeed;
-        						  aSpeed = 0;
-        						  while(rxBuffer[k%ESPRXBUFFERSIZE] != '_') {
-        							  if((k - (j + 1) >= 5) || (k%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
-        								  aSpeed = aSpeedOld;
-        								  break;
-        							  }
-        							  aSpeed = (aSpeed*10) + (rxBuffer[k%ESPRXBUFFERSIZE]-48);
-        							  k++;
-        							  if(rxBuffer[k%ESPRXBUFFERSIZE] == '.') {
-        								  k++;
-        								  uint8_t fp = 1;
-        								  while(rxBuffer[k%ESPRXBUFFERSIZE] != '_') {
-        									  if((k - (j + 1) >= 5) || (k%ESPRXBUFFERSIZE >= (rxBufferHead + receivedBytes)%ESPRXBUFFERSIZE)) {
-        										  aSpeed = aSpeedOld;
-        										  break;
-        									  }
-        									  aSpeed = aSpeed + (rxBuffer[k%ESPRXBUFFERSIZE]-48)/pow(10,fp);
-        									  k++;
-        									  fp++;
-        								  }
-        							  }
-        						  }
-        						  if(rxBuffer[(j + 1)%ESPRXBUFFERSIZE] == '-') {
-        							  aSpeed = aSpeed * (-1);
-        						  }
-    						  }
+		  debugVar = 12;
+		  if((rxBuffer[(rxBufferHead + i)%ESPRXBUFFERSIZE] == 'E') &&
+		     (rxBuffer[(rxBufferHead + i + 1)%ESPRXBUFFERSIZE] == 'R') &&
+			 (rxBuffer[(rxBufferHead + i + 2)%ESPRXBUFFERSIZE] == 'R') &&
+			 (rxBuffer[(rxBufferHead + i + 3)%ESPRXBUFFERSIZE] == 'O') &&
+			 (rxBuffer[(rxBufferHead + i + 4)%ESPRXBUFFERSIZE] == 'R')) {
+			  debugVar = 121;
+			  espRecon(&huart3);
+		  }
+		  debugVar = 13;
+	  }
 
-    					  }
-    				  }
-    			  }
-    		  }
-    	  }
-      }
 
-//      if((tSpeed != 0) || (aSpeed != 0)) {
-//    	  __asm__ volatile("NOP");
-//      }
-
+	  debugVar = 15;
       // Update the buffer head index
       rxBufferHead = ((rxBufferHead + receivedBytes) % ESPRXBUFFERSIZE);
 
       if(xEventGroupGetBitsFromISR(timerFdsEventGroup) == 0x1) {
+    	  debugVar = 20;
     	    // Create the JSON content with variable values
-//    	    char jsonContent[200];
-//    	    sprintf(jsonContent, "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\"}", avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY);
-
-    	    // Create the entire POST request string
-//    	    char txBuffer[500];
     	    sprintf(txBuffer, "POST /robot_data HTTP/1.1\r\n"
     	                         "Host: 192.168.137.1\r\n"
     	                         "Content-Type: application/json\r\n"
 //    	                         "Content-Length: %d\r\n\r\n"
-    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\", \"tSpeed\": \"%f\", \"aSpeed\": \"%f\", \"rReqValue\": \"%d\", \"lReqValue\": \"%d\"}",
-								 avrBatVoltage, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY, tSpeed, aSpeed, SoftPwmR.reqValue, SoftPwmL.reqValue);
+    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\", \"tSpeed\": \"%f\", \"aSpeed\": \"%f\", \"rReqValue\": \"%d\", \"lReqValue\": \"%d\", \"accelRX\": \"%d\", \"accelRY\": \"%d\", \"accelRZ\": \"%d\", \"accelLX\": \"%d\", \"accelLY\": \"%d\", \"accelLZ\": \"%d\"}",
+								 BatChargeState, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY, tSpeed, aSpeed, SoftPwmR.reqValue, SoftPwmL.reqValue, accelValueR[0], accelValueR[1], accelValueR[2], accelValueL[0], accelValueL[1], accelValueL[2]);
 
     	    // Calculate the number of characters in the POST request
     	    int postRequestLength = strlen(txBuffer);
-
-//    	  char pData[] = "GET / HTTP/1.1\r\nHost: 192.168.137.1:8080\r\n\r\n";
-//    	  int d = sizeof(pData)-1;
-    	  uint8_t char_number = 0;
-//    	  int temp = d;
-    	  int temp = postRequestLength;
-    	  while(temp != 0){
-    	  temp = temp / 10;
-    	  char_number++;
-    	  }
-
-
-    	  char pData2[13+char_number];
-//    	  sprintf(pData2, "AT+CIPSEND=%d\r\n", d);
-    	  sprintf(pData2, "AT+CIPSEND=%d\r\n", postRequestLength);
-    	  while(atSend_USART3_DMA(pData2, sizeof(pData2)) != 0) {
+    	    debugVar = 25;
+    	  sprintf(pDataBuf, "AT+CIPSEND=%d\r\n", postRequestLength);
+    	  while(atSend_USART3_DMA(pDataBuf, strlen(pDataBuf)) != 0) {
     	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
     	  }
-//    	  while(atSend_USART3_DMA(pData, sizeof(pData)-1) != 0) {
-//    	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
-//    	  }
+    	  debugVar = 30;
     	  while(atSend_USART3_DMA(txBuffer, postRequestLength) != 0) {
     	    vTaskDelay( pdMS_TO_TICKS( 10 ) );
     	  }
+    	  debugVar = 35;
     	  xEventGroupClearBits(timerFdsEventGroup, 0xFFFFFF);
       }
 
-	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
+	  vTaskDelay( pdMS_TO_TICKS( 25 ) );
   }
   /* USER CODE END espCommunication */
 }
@@ -1261,17 +1164,34 @@ void encoderR(void const * argument)
 		  continue;
 	  }
 
-	  if (!EncoderR.posCntUpdate) {
-		  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
-	  } else {
-//		  if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
-//			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
-//		  } else {
-//			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
-//		  }
-		  EncoderR.posCntUpdate = 0;
-	  }
-//	  taskYIELD();
+	  switch (EncoderR.posCntUpdate + EncoderR.timeUpdate) {
+		case 0:
+			EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
+			break;
+		case POSUPDATED:
+			if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
+			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+			} else {
+			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
+			}
+			EncoderR.posCntUpdate = 0;
+			break;
+		case TIMEUPDATED:
+			EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew + 65535 - EncoderR.timeOld)))*kToRpm);
+			EncoderR.timeUpdate = 0;
+			break;
+		case (POSUPDATED + TIMEUPDATED):
+			if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
+			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew + 65535 - EncoderR.timeOld)))*kToRpm);
+			} else {
+			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew + 65535 - EncoderR.timeOld)))*kToRpm);
+			}
+			EncoderR.posCntUpdate = 0;
+			EncoderR.timeUpdate = 0;
+			break;
+		default:
+			break;
+	}
 	  __asm__ volatile("NOP");
   }
   /* USER CODE END encoderR */
@@ -1305,17 +1225,35 @@ void encoderL(void const * argument)
 		  continue;
 	  }
 
-	  if (!EncoderL.posCntUpdate) {
-		  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(32*1000*60)/256;
-	  } else {
-//		  if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
-//			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
-//		  } else {
-//			  EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
-//		  }
-		  EncoderL.posCntUpdate = 0;
-	  }
-//	  taskYIELD();
+	  switch (EncoderL.posCntUpdate + EncoderL.timeUpdate) {
+		case 0:
+			EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(32*1000*60)/256;
+			break;
+		case POSUPDATED:
+			if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
+				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
+			} else {
+				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
+			}
+			EncoderL.posCntUpdate = 0;
+			break;
+		case TIMEUPDATED:
+			EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew + 65535 - EncoderL.timeOld)))*kToRpm);
+			EncoderL.timeUpdate = 0;
+			break;
+		case (POSUPDATED + TIMEUPDATED):
+			if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
+				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew + 65535 - EncoderL.timeOld)))*kToRpm);
+			} else {
+				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew + 65535 - EncoderL.timeOld)))*kToRpm);
+			}
+			EncoderL.posCntUpdate = 0;
+			EncoderL.timeUpdate = 0;
+			break;
+		default:
+			break;
+	}
+
 	  __asm__ volatile("NOP");
   }
   /* USER CODE END encoderL */
@@ -1343,13 +1281,6 @@ void softwarePWMR(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-//	  float reqValueTemp = MAXRPM*((float)joyY/100);
-//	  if(joyX > 0) {
-//		  reqValueTemp = reqValueTemp - reqValueTemp*((float)joyX/100);
-//	  }
-//	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
-//		  reqValueTemp = 0;
-//	  }
 	  float rWheelSpeed = tSpeed - aSpeed*DISBETWHEELS/2;
 	  float reqValueTemp = (rWheelSpeed*60)/(2*3.14*RWHEEL);
 	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
@@ -1376,11 +1307,14 @@ void softwarePWMR(void const * argument)
 	  if(pwmFloatValue > PWMVAL) pwmFloatValue = PWMVAL;
 	  else if(pwmFloatValue < -PWMVAL) pwmFloatValue = -PWMVAL;
 	  SoftPwmR.pwmValue = (int16_t)pwmFloatValue;
-	  if(SoftPwmR.reqValue = 0) {
-		  SoftPwmR.pwmValue -= 1;
+	  if(SoftPwmR.reqValue == 0) {
+		  if(SoftPwmR.pwmValue > 0) {
+			  pwmFloatValue -= 1;
+		  }
+		  if(SoftPwmR.pwmValue < 0) {
+			  pwmFloatValue += 1;
+		  }
 	  }
-//	  if(SoftPwmR.pwmValue > 100) SoftPwmR.pwmValue = 100;
-//	  else if(SoftPwmR.pwmValue < -100) SoftPwmR.pwmValue = -100;
 
 	  if(SoftPwmR.pwmValue < 0) {
 		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue*(-1);
@@ -1419,13 +1353,6 @@ void softwarePWML(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-//	  float reqValueTemp = MAXRPM*((float)joyY/100);
-//	  if(joyX < 0) {
-//		  reqValueTemp = reqValueTemp - reqValueTemp*(-(float)joyX/100);
-//	  }
-//	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
-//		  reqValueTemp = 0;
-//	  }
 	  float lWheelSpeed = tSpeed + aSpeed*DISBETWHEELS/2;
 	  float reqValueTemp = (lWheelSpeed*60)/(2*3.14*RWHEEL);
 	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
@@ -1452,11 +1379,14 @@ void softwarePWML(void const * argument)
 	  if(pwmFloatValue > PWMVAL) pwmFloatValue = PWMVAL;
 	  else if(pwmFloatValue < -PWMVAL) pwmFloatValue = -PWMVAL;
 	  SoftPwmL.pwmValue = (int16_t)pwmFloatValue;
-	  if(SoftPwmL.reqValue = 0) {
-		  SoftPwmL.pwmValue -= 1;
+	  if(SoftPwmL.reqValue == 0) {
+		  if(SoftPwmL.pwmValue > 0) {
+			  pwmFloatValue -= 1;
+		  }
+		  if(SoftPwmL.pwmValue < 0) {
+			  pwmFloatValue += 1;
+		  }
 	  }
-//	  if(SoftPwmL.pwmValue > 100) SoftPwmL.pwmValue = 100;
-//	  else if(SoftPwmL.pwmValue < -100) SoftPwmL.pwmValue = -100;
 
 	  if(SoftPwmL.pwmValue < 0) {
 		  TIM15->CCR2 = TIM15->ARR - SoftPwmL.pwmValue*(-1);
@@ -1469,8 +1399,41 @@ void softwarePWML(void const * argument)
 	  }
 
 	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
+
   }
   /* USER CODE END softwarePWML */
+}
+
+/* USER CODE BEGIN Header_accelerometer */
+/**
+* @brief Function implementing the Accelerometer thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_accelerometer */
+void accelerometer(void const * argument)
+{
+  /* USER CODE BEGIN accelerometer */
+	vTaskDelay(120);
+	adxl345_bw_rate_setup(&hspi2, GPIOB, 14, 0xA);
+	vTaskDelay(20);
+	adxl345_data_format(&hspi2, GPIOB, 14, 0x42);
+	vTaskDelay(20);
+	adxl345_measure_mode(&hspi2, GPIOB, 14);
+	vTaskDelay(20);
+	adxl345_bw_rate_setup(&hspi2, GPIOB, 12, 0xA);
+	vTaskDelay(20);
+	adxl345_data_format(&hspi2, GPIOB, 12, 0x42);
+	vTaskDelay(20);
+	adxl345_measure_mode(&hspi2, GPIOB, 12);
+  /* Infinite loop */
+  for(;;)
+  {
+	  adxl345_read_data(&hspi2, GPIOB, 14, (uint8_t*)accelValueR);
+	  adxl345_read_data(&hspi2, GPIOB, 12, (uint8_t*)accelValueL);
+	  vTaskDelay(20);
+  }
+  /* USER CODE END accelerometer */
 }
 
 /**

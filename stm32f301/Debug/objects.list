@@ -1,3 +1,4 @@
+"./Core/Src/adxl345.o"
 "./Core/Src/espATcommands.o"
 "./Core/Src/freertos.o"
 "./Core/Src/main.o"

@@ -214,8 +214,8 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM1_TRG_COM_TIM17_IRQn 0 */
 	if((TIM17->SR & TIM_SR_UIF) == TIM_SR_UIF) {
-		EncoderR.timeNew = -(65535 - EncoderR.timeNew);
-		TIM17->SR &= ~(TIM_SR_UIF);
+		EncoderR.timeUpdate = TIMEUPDATED;
+		EncoderL.timeUpdate = TIMEUPDATED;
 	}
 
   /* USER CODE END TIM1_TRG_COM_TIM17_IRQn 0 */
@@ -272,87 +272,15 @@ void ADC1_IRQHandler(void)
 void TIM1_UP_TIM16_IRQHandler(void)
 {
 	if((TIM1->SR & TIM_SR_UIF) == TIM_SR_UIF) {
-		EncoderR.posCntUpdate = 1;
+		EncoderR.posCntUpdate = POSUPDATED;
 		TIM1->SR &= ~(TIM_SR_UIF);
 	}
-	if((TIM16->SR & TIM_SR_UIF) == TIM_SR_UIF) {
-		softCounterValue++;
-
-		if(softCounterValue >= 100) {
-			softCounterValue = 0;
-		}
-
-		if(SoftPwmR.pwmValue >= 0) {
-			if(softCounterValue < SoftPwmR.pwmValue) {
-				if(SoftPwmR.status != 1) {
-					GPIOA->ODR &= ~(1<<7); //_3A
-					GPIOB->ODR |= (1<<0); //_4A
-					SoftPwmR.status = 1;
-				}
-			} else {
-				if(SoftPwmR.status != 0) {
-					GPIOA->ODR &= ~(1<<7); //_3A
-					GPIOB->ODR &= ~(1<<0); //_4A
-					SoftPwmR.status = 0;
-				}
-			}
-		} else if(SoftPwmR.pwmValue < 0) {
-			if(softCounterValue < (-SoftPwmR.pwmValue)) {
-				if(SoftPwmR.status != 2) {
-					GPIOA->ODR |= (1<<7); //_3A
-					GPIOB->ODR &= ~(1<<0); //_4A
-					SoftPwmR.status = 2;
-				}
-			} else {
-				if(SoftPwmR.status != 0) {
-					GPIOA->ODR &= ~(1<<7); //_3A
-					GPIOB->ODR &= ~(1<<0); //_4A
-					SoftPwmR.status = 0;
-				}
-			}
-		}
-
-		if(SoftPwmL.pwmValue >= 0) {
-			if(softCounterValue < SoftPwmL.pwmValue) {
-				if(SoftPwmL.status != 1) {
-					GPIOA->ODR &= ~(1<<4); //_1A
-					GPIOA->ODR |= (1<<5); //_2A
-					SoftPwmL.status = 1;
-				}
-			} else {
-				if(SoftPwmL.status != 0) {
-					GPIOA->ODR &= ~(1<<4); //_1A
-					GPIOA->ODR &= ~(1<<5); //_2A
-					SoftPwmL.status = 0;
-				}
-			}
-		} else if(SoftPwmL.pwmValue < 0) {
-			if(softCounterValue < (-SoftPwmL.pwmValue)) {
-				if(SoftPwmL.status != 2) {
-					GPIOA->ODR |= (1<<4); //_1A
-					GPIOA->ODR &= ~(1<<5); //_2A
-					SoftPwmL.status = 2;
-				}
-			} else {
-				if(SoftPwmL.status != 0) {
-					GPIOA->ODR &= ~(1<<4); //_1A
-					GPIOA->ODR &= ~(1<<5); //_2A
-					SoftPwmL.status = 0;
-				}
-			}
-		}
-
-		TIM16->SR &= ~(TIM_SR_UIF);
-	}
-
 }
 
 void TIM2_IRQHandler(void)
 {
-	__asm__ volatile("NOP");
-	EncoderL.posCntUpdate = 1;
+	EncoderL.posCntUpdate = POSUPDATED;
 	TIM2->SR &= ~(TIM_SR_UIF);
-	__asm__ volatile("NOP");
 }
 
 void TIM1_BRK_TIM15_IRQHandler(void)

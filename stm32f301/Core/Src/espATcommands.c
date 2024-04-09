@@ -6,24 +6,7 @@
  */
 
 #include <espATcommands.h>
-
-
-//void sendATCommand(UART_HandleTypeDef *huart, const char* atcom, int sizeOfAT, char* response, int sizeOfResp, int delayms)
-//{
-////	if(atcom[sizeOfAT-1] == '\0') {
-////		sizeOfAT -= 1;
-////	}
-//	for(uint8_t i = 0; i < sizeOfAT; i++) {
-//		if(atcom[i] == '\0') {
-//			sizeOfAT = i;
-//		}
-//	}
-//	for(uint8_t i = 0; i < sizeOfResp; i++) {
-//		response[i] = 0;
-//	}
-//	HAL_UART_Transmit(huart, atcom, sizeOfAT, delayms);
-//	HAL_UART_Receive(huart, response, sizeOfResp, delayms);
-//}
+extern uint32_t debugVar;
 
 void sendATCommand(UART_HandleTypeDef *huart, const char* atcom, int sizeOfAT, int delayms)
 {
@@ -79,4 +62,65 @@ uint8_t atSend_USART3_DMA(const uint8_t *pData, uint16_t amount)
 
 	DMA1_Channel2->CCR |= DMA_CCR_EN;
 	return 0;
+}
+
+float parseFloat(const char *buffer, uint16_t startIndex)
+{
+    float value = 0.0f;
+    uint8_t decimalFlag = 0;
+    uint8_t decimalPlaces = 0;
+
+    for (uint16_t i = startIndex; buffer[i % ESPRXBUFFERSIZE] != '_'; i++) {
+        if (buffer[i % ESPRXBUFFERSIZE] == '.') {
+            decimalFlag |= (1<<0);
+        } else if (buffer[i % ESPRXBUFFERSIZE] == '-') {
+            decimalFlag |= (1<<1);
+        } else if (buffer[i % ESPRXBUFFERSIZE] >= '0' && buffer[i % ESPRXBUFFERSIZE] <= '9') {
+            if ((decimalFlag & (1<<0)) == (1<<0)) {
+                decimalPlaces++;
+                value = value + (buffer[i % ESPRXBUFFERSIZE] - '0') / pow(10, decimalPlaces);
+            } else {
+                value = value * 10 + (buffer[i % ESPRXBUFFERSIZE] - '0');
+            }
+        }
+        if(value > 50) {
+        	__asm__ volatile("NOP");
+        }
+    }
+
+    if((decimalFlag & (1<<1)) == (1<<1)) {
+    	value *= -1.0f;
+    }
+
+    return value;
+}
+
+void espRecon(UART_HandleTypeDef *huart)
+{
+	char pData[100];
+	debugVar = 122;
+
+	sprintf(pData, "AT+CIPCLOSE\r\n");
+	HAL_UART_Transmit(huart, pData, strlen(pData), 250);
+	vTaskDelay(50);
+
+	debugVar = 123;
+
+	sprintf(pData, "AT+CIPSTART=\"TCP\",\"192.168.137.1\",8080\r\n");
+	HAL_UART_Transmit(huart, pData, strlen(pData), 250);
+	vTaskDelay(40);
+
+	debugVar = 124;
+	// Creating the entire GET request string
+	sprintf(pData, "GET /robot HTTP/1.1\r\n"
+					  "Host: 192.168.137.1\r\n");
+	int getRequestLength = strlen(pData);
+	char pDataBuf[20];
+	sprintf(pDataBuf, "AT+CIPSEND=%d\r\n", getRequestLength);
+	debugVar = 125;
+	HAL_UART_Transmit(huart, pDataBuf, strlen(pDataBuf), 250);
+	vTaskDelay(10);
+	debugVar = 126;
+	HAL_UART_Transmit(huart, pData, getRequestLength, 250);
+	vTaskDelay(50);
 }

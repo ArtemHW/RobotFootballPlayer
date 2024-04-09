@@ -12,5 +12,5 @@
 ../Core/Src/stm32f3xx_it.c:258:6:DMA1_Channel1_IRQHandler	4	static,ignoring_inline_asm
 ../Core/Src/stm32f3xx_it.c:265:6:ADC1_IRQHandler	4	static,ignoring_inline_asm
 ../Core/Src/stm32f3xx_it.c:272:6:TIM1_UP_TIM16_IRQHandler	4	static
-../Core/Src/stm32f3xx_it.c:350:6:TIM2_IRQHandler	4	static,ignoring_inline_asm
-../Core/Src/stm32f3xx_it.c:358:6:TIM1_BRK_TIM15_IRQHandler	4	static,ignoring_inline_asm
+../Core/Src/stm32f3xx_it.c:280:6:TIM2_IRQHandler	4	static
+../Core/Src/stm32f3xx_it.c:286:6:TIM1_BRK_TIM15_IRQHandler	4	static,ignoring_inline_asm

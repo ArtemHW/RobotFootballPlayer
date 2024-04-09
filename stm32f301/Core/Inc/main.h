@@ -39,6 +39,7 @@ extern "C" {
 struct EncoderStr {
 	int timeNew;
 	int timeOld;
+	uint8_t timeUpdate;
 	int32_t positionNew;
 	int32_t positionOld;
 	uint8_t posCntUpdate;
@@ -94,8 +95,8 @@ void Error_Handler(void);
 #define SPI2_CS_R_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-#define BATMAXV 2200
-#define BATMINV 2110
+#define BATMAXV 2385
+#define BATMINV 2000
 #define OVERVOLTAGEONLED 0x1
 #define UNDERVOLTAGEONLED 0x2
 #define KP 0.001f
@@ -109,6 +110,8 @@ void Error_Handler(void);
 #define ESPTXBUFFERSIZE 511
 #define IPSERVER "127.16.19.7"
 #define PORTSERVER "8080"
+#define POSUPDATED 1
+#define TIMEUPDATED 2
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
