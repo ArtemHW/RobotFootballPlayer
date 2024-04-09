@@ -18,6 +18,12 @@
             const softPwmLValueSpan = document.getElementById('softPwmLValue');
             const tSpeedSpan = document.getElementById('tSpeed');
             const aSpeedSpan = document.getElementById('aSpeed');
+            const accelLXSpan = document.getElementById('accelLX');
+            const accelLYSpan = document.getElementById('accelLY');
+            const accelLZSpan = document.getElementById('accelLZ');
+            const accelRXSpan = document.getElementById('accelRX');
+            const accelRYSpan = document.getElementById('accelRY');
+            const accelRZSpan = document.getElementById('accelRZ');
 
             function updateSpans(data) {
                 console.log(data);
@@ -28,6 +34,12 @@
                 softPwmLValueSpan.innerHTML = data.softPwmLValue || 'N/A';
                 tSpeedSpan.innerHTML = data.tSpeed || 'N/A';
                 aSpeedSpan.innerHTML = data.aSpeed || 'N/A';
+                accelLXSpan.innerHTML = data.accelLX || 'N/A';
+                accelLYSpan.innerHTML = data.accelLY || 'N/A';
+                accelLZSpan.innerHTML = data.accelLZ || 'N/A';
+                accelRXSpan.innerHTML = data.accelRX || 'N/A';
+                accelRYSpan.innerHTML = data.accelRY || 'N/A';
+                accelRZSpan.innerHTML = data.accelRZ || 'N/A';
             }
 
             function fetchData() {
@@ -69,7 +81,7 @@
         }
 
         span {
-            font-size: 16px;
+            font-size: 12px;
         }
 
         .no-select {
@@ -123,11 +135,14 @@
         <div class="card flex-card">
             <div class="card-body" style="min-width: 370px;">
                 <ul class="list-group list-group-flush">
-                    <li class="list-group-item"><span><i class="fa-solid fa-battery-half"></i> Battery Voltage: </span><span id="avrBatVoltage"></span></li>
+                    <li class="list-group-item"><span><i class="fa-solid fa-battery-half"></i> Battery Voltage: </span><span id="avrBatVoltage"></span><span>%</span></li>
                     <li class="list-group-item"><span><i class="fa-solid fa-arrow-right"></i> Right Encoder RPM: </span><span id="encoderRRpm"></span></li>
                     <li class="list-group-item"><span><i class="fa-solid fa-arrow-left"></i> Left Encoder RPM: </span><span id="encoderLRpm"></span></li>
                     <li class="list-group-item"><span><i class="fa-solid fa-arrow-right"></i> Right Motor PWM: </span><span id="softPwmRValue"></span></li>
                     <li class="list-group-item"><span><i class="fa-solid fa-arrow-left"></i> Left Motor PWM: </span><span id="softPwmLValue"></span></li>
+                    <li class="list-group-item"><span><i class="fa-solid fa-x"></i> Left accelerometer: </span><span id="accelLX"></span><span><i class="fa-solid fa-x"></i> Right accelerometer: </span><span id="accelRX"></span></li>
+                    <li class="list-group-item"><span><i class="fa-solid fa-y"></i> Left accelerometer: </span><span id="accelLY"></span><span><i class="fa-solid fa-y"></i> Right accelerometer: </span><span id="accelRY"></span></li>
+                    <li class="list-group-item"><span><i class="fa-solid fa-z"></i> Left accelerometer: </span><span id="accelLZ"></span><span><i class="fa-solid fa-z"></i> Right accelerometer: </span><span id="accelRZ"></span></li>
                 </ul>
             </div>
         </div>

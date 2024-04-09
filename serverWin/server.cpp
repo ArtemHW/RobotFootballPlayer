@@ -39,6 +39,12 @@ std::string joyY = "0";
 #define RCMATH 0.035
 float aSpeed;
 float tSpeed;
+std::string accelLX;
+std::string accelLY;
+std::string accelLZ;
+std::string accelRX;
+std::string accelRY;
+std::string accelRZ;
 
 
 int main() {
@@ -212,7 +218,13 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                     "\"softPwmRValue\": " + softPwmRValue + ","
                     "\"softPwmLValue\": " + softPwmLValue + ","
                     "\"tSpeed\": " + std::to_string(tSpeed) + ","
-                    "\"aSpeed\": " + std::to_string(aSpeed) +
+                    "\"aSpeed\": " + std::to_string(aSpeed) + ","
+                    "\"accelLX\": " + accelLX + ","
+                    "\"accelLY\": " + accelLY + ","
+                    "\"accelLZ\": " + accelLZ + ","
+                    "\"accelRX\": " + accelRX + ","
+                    "\"accelRY\": " + accelRY + ","
+                    "\"accelRZ\": " + accelRZ +
                     "}";
                 std::cout << "Response Data: " << responseData << std::endl;  // Debug output
                 std::string contentLengthHeader = "Content-Length: " + std::to_string(responseData.length()) + "\n";
@@ -329,10 +341,70 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
 
                         size_t lReqValuePos = jsonContent.find("\"lReqValue\":");
                         if (lReqValuePos != std::string::npos) {
-                            size_t lReqValueEnd = jsonContent.find("}", lReqValuePos);
+                            size_t lReqValueEnd = jsonContent.find(",", lReqValuePos);
                             if (lReqValueEnd != std::string::npos) {
                                 std::string lReqValue = jsonContent.substr(lReqValuePos + 12, lReqValueEnd - (lReqValuePos + 12));
                                 std::cout << "\033[33mlReqValue: " << lReqValue << "\033[0m" << std::endl;
+                            }
+                        }
+
+                        size_t accelRXPos = jsonContent.find("\"accelRX\":");
+                        if (accelRXPos != std::string::npos) {
+                            size_t accelRXEnd = jsonContent.find(",", accelRXPos);
+                            if (accelRXEnd != std::string::npos) {
+                                std::string accelRXValue = jsonContent.substr(accelRXPos + 10, accelRXEnd - (accelRXPos + 10));
+                                std::cout << "\033[33mlaccelRX: " << accelRXValue << "\033[0m" << std::endl;
+                                accelRX = accelRXValue;
+                            }
+                        }
+
+                        size_t accelRYPos = jsonContent.find("\"accelRY\":");
+                        if (accelRYPos != std::string::npos) {
+                            size_t accelRYEnd = jsonContent.find(",", accelRYPos);
+                            if (accelRYEnd != std::string::npos) {
+                                std::string accelRYValue = jsonContent.substr(accelRYPos + 10, accelRYEnd - (accelRYPos + 10));
+                                std::cout << "\033[33mlaccelRY: " << accelRYValue << "\033[0m" << std::endl;
+                                accelRY = accelRYValue;
+                            }
+                        }
+
+                        size_t accelRZPos = jsonContent.find("\"accelRZ\":");
+                        if (accelRZPos != std::string::npos) {
+                            size_t accelRZEnd = jsonContent.find(",", accelRZPos);
+                            if (accelRZEnd != std::string::npos) {
+                                std::string accelRZValue = jsonContent.substr(accelRZPos + 10, accelRZEnd - (accelRZPos + 10));
+                                std::cout << "\033[33mlaccelRZ: " << accelRZValue << "\033[0m" << std::endl;
+                                accelRZ = accelRZValue;
+                            }
+                        }
+
+                        size_t accelLXPos = jsonContent.find("\"accelLX\":");
+                        if (accelLXPos != std::string::npos) {
+                            size_t accelLXEnd = jsonContent.find(",", accelLXPos);
+                            if (accelLXEnd != std::string::npos) {
+                                std::string accelLXValue = jsonContent.substr(accelLXPos + 10, accelLXEnd - (accelLXPos + 10));
+                                std::cout << "\033[33mlaccelLX: " << accelLXValue << "\033[0m" << std::endl;
+                                accelLX = accelLXValue;
+                            }
+                        }
+
+                        size_t accelLYPos = jsonContent.find("\"accelLY\":");
+                        if (accelLYPos != std::string::npos) {
+                            size_t accelLYEnd = jsonContent.find(",", accelLYPos);
+                            if (accelLYEnd != std::string::npos) {
+                                std::string accelLYValue = jsonContent.substr(accelLYPos + 10, accelLYEnd - (accelLYPos + 10));
+                                std::cout << "\033[33mlaccelLY: " << accelLYValue << "\033[0m" << std::endl;
+                                accelLY = accelLYValue;
+                            }
+                        }
+
+                        size_t accelLZPos = jsonContent.find("\"accelLZ\":");
+                        if (accelLZPos != std::string::npos) {
+                            size_t accelLZEnd = jsonContent.find("}", accelLZPos);
+                            if (accelLZEnd != std::string::npos) {
+                                std::string accelLZValue = jsonContent.substr(accelLZPos + 10, accelLZEnd - (accelLZPos + 10));
+                                std::cout << "\033[33mlaccelLZ: " << accelLZValue << "\033[0m" << std::endl;
+                                accelLZ = accelLZValue;
                             }
                         }
                     }
