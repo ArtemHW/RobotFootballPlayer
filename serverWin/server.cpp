@@ -34,7 +34,7 @@ std::string softPwmRValue;
 std::string softPwmLValue;
 std::string joyX = "0";
 std::string joyY = "0";
-#define MAXRPM 2000
+#define MAXRPM 500
 #define RWHEEL 0.0175
 #define RCMATH 0.035
 float aSpeed;
@@ -294,23 +294,23 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                             }
                         }
 
-                        size_t joyXValuePos = jsonContent.find("\"joyX\":");
-                        if (joyXValuePos != std::string::npos) {
-                            size_t joyXValueEnd = jsonContent.find(",", joyXValuePos);
-                            if (joyXValueEnd != std::string::npos) {
-                                std::string joyXValue = jsonContent.substr(joyXValuePos + 7, joyXValueEnd - (joyXValuePos + 7));
-                                std::cout << "\033[33mjoyX: " << joyXValue << "\033[0m" << std::endl;
-                            }
-                        }
+                        // size_t joyXValuePos = jsonContent.find("\"joyX\":");
+                        // if (joyXValuePos != std::string::npos) {
+                        //     size_t joyXValueEnd = jsonContent.find(",", joyXValuePos);
+                        //     if (joyXValueEnd != std::string::npos) {
+                        //         std::string joyXValue = jsonContent.substr(joyXValuePos + 7, joyXValueEnd - (joyXValuePos + 7));
+                        //         std::cout << "\033[33mjoyX: " << joyXValue << "\033[0m" << std::endl;
+                        //     }
+                        // }
 
-                        size_t joyYValuePos = jsonContent.find("\"joyY\":");
-                        if (joyYValuePos != std::string::npos) {
-                            size_t joyYValueEnd = jsonContent.find(",", joyYValuePos);
-                            if (joyYValueEnd != std::string::npos) {
-                                std::string joyYValue = jsonContent.substr(joyYValuePos + 7, joyYValueEnd - (joyYValuePos + 7));
-                                std::cout << "\033[33mjoyY: " << joyYValue << "\033[0m" << std::endl;
-                            }
-                        }
+                        // size_t joyYValuePos = jsonContent.find("\"joyY\":");
+                        // if (joyYValuePos != std::string::npos) {
+                        //     size_t joyYValueEnd = jsonContent.find(",", joyYValuePos);
+                        //     if (joyYValueEnd != std::string::npos) {
+                        //         std::string joyYValue = jsonContent.substr(joyYValuePos + 7, joyYValueEnd - (joyYValuePos + 7));
+                        //         std::cout << "\033[33mjoyY: " << joyYValue << "\033[0m" << std::endl;
+                        //     }
+                        // }
 
                         size_t tSpeedValuePos = jsonContent.find("\"tSpeed\":");
                         if (tSpeedValuePos != std::string::npos) {

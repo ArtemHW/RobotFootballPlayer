@@ -261,3 +261,23 @@ void softwarePWML(void const * argument)
   }
   /* USER CODE END softwarePWML */
 }
+
+
+
+
+
+
+void TIM1_TRG_COM_TIM17_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM1_TRG_COM_TIM17_IRQn 0 */
+	if((TIM17->SR & TIM_SR_UIF) == TIM_SR_UIF) {
+		EncoderR.timeUpdate = TIMEUPDATED;
+		EncoderL.timeUpdate = TIMEUPDATED;
+	}
+
+  /* USER CODE END TIM1_TRG_COM_TIM17_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim17);
+  /* USER CODE BEGIN TIM1_TRG_COM_TIM17_IRQn 1 */
+
+  /* USER CODE END TIM1_TRG_COM_TIM17_IRQn 1 */
+}
