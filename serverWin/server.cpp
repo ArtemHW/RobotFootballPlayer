@@ -400,11 +400,20 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
 
                         size_t accelLZPos = jsonContent.find("\"accelLZ\":");
                         if (accelLZPos != std::string::npos) {
-                            size_t accelLZEnd = jsonContent.find("}", accelLZPos);
+                            size_t accelLZEnd = jsonContent.find(",", accelLZPos);
                             if (accelLZEnd != std::string::npos) {
                                 std::string accelLZValue = jsonContent.substr(accelLZPos + 10, accelLZEnd - (accelLZPos + 10));
                                 std::cout << "\033[33mlaccelLZ: " << accelLZValue << "\033[0m" << std::endl;
                                 accelLZ = accelLZValue;
+                            }
+                        }
+
+                        size_t cycleCountPos = jsonContent.find("\"cycle_count\":");
+                        if (cycleCountPos != std::string::npos) {
+                            size_t cycleCountEnd = jsonContent.find("}", cycleCountPos);
+                            if (cycleCountEnd != std::string::npos) {
+                                std::string cycleCountValue = jsonContent.substr(cycleCountPos + 14, cycleCountEnd - (cycleCountPos + 14));
+                                std::cout << "\033[33mlcycleCount: " << cycleCountValue << "\033[0m" << std::endl;
                             }
                         }
                     }
@@ -501,7 +510,7 @@ void SendData(SOCKET clientSocket) {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500)); //101
+        std::this_thread::sleep_for(std::chrono::milliseconds(101)); //101
     }
 }
 
