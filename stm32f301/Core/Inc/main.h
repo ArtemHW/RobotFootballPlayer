@@ -37,9 +37,9 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 struct EncoderStr {
-	int timeNew;
-	int timeOld;
-	uint8_t timeUpdate;
+//	int timeNew;
+//	int timeOld;
+//	uint8_t timeUpdate;
 	int32_t positionNew;
 	int32_t positionOld;
 	uint8_t posCntUpdate;
@@ -47,6 +47,13 @@ struct EncoderStr {
 };
 
 struct SoftPWM {
+	int errorValue;
+	float sumValue;
+	float pValue;
+	float iValue;
+	float pwmFloatValue;
+	float WheelSpeed;
+	float reqValueTemp;
 	int16_t reqValue;
 	int16_t curValue;
 	int16_t pwmValue;
@@ -101,7 +108,7 @@ void Error_Handler(void);
 #define UNDERVOLTAGEONLED 0x2
 #define KP 0.001f
 #define KI  0.0000001f   //0.0001f
-#define MAXRPM 2000
+#define MAXRPM 500
 #define PWMVAL 400
 #define DISBETWHEELS 0.070
 #define RWHEEL 0.0175
@@ -112,6 +119,7 @@ void Error_Handler(void);
 #define PORTSERVER "8080"
 #define POSUPDATED 1
 #define TIMEUPDATED 2
+#define PRELOADENC 30000
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -60,10 +60,6 @@ osThreadId PS_MeasureHandle;
 osThreadId PC_13_LEDHandle;
 osThreadId PC_14_LEDHandle;
 osThreadId EspCommunicationHandle;
-osThreadId EncoderRHandle;
-osThreadId EncoderLHandle;
-osThreadId SoftwarePwmRHandle;
-osThreadId SoftwarePwmLHandle;
 osThreadId AccelerometerHandle;
 /* USER CODE BEGIN PV */
 volatile uint16_t batteryVoltage[10]; // Battery voltage.
@@ -77,8 +73,6 @@ struct SoftPWM SoftPwmR, SoftPwmL;
 
 float kToRpm;
 
-uint16_t softCounterValue;
-
 char txBuffer[ESPTXBUFFERSIZE];
 volatile char rxBuffer[ESPRXBUFFERSIZE];
 volatile uint16_t rxBufferHead;
@@ -88,8 +82,8 @@ char rxBufferCopy[256];
 TimerHandle_t timerForDataSending;
 EventGroupHandle_t timerFdsEventGroup;
 
-int8_t joyX;
-int8_t joyY;
+//int8_t joyX;
+//int8_t joyY;
 float tSpeed;
 float aSpeed;
 
@@ -98,6 +92,8 @@ int16_t accelValueL[3];
 
 uint32_t debugVar;
 uint32_t debugVar2;
+
+volatile uint32_t cycle_count;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -107,16 +103,12 @@ static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_TIM17_Init(void);
 static void MX_TIM15_Init(void);
+static void MX_TIM17_Init(void);
 void psMeasure(void const * argument);
 void pc13LedCntrl(void const * argument);
 void pc14LedCntrl(void const * argument);
 void espCommunication(void const * argument);
-void encoderR(void const * argument);
-void encoderL(void const * argument);
-void softwarePWMR(void const * argument);
-void softwarePWML(void const * argument);
 void accelerometer(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -146,41 +138,55 @@ int main(void)
 	avrBatVoltage = 0;
 	BatChargeState = 0;
 
-	EncoderR.timeNew = 0;
-	EncoderR.timeOld = 0;
-	EncoderR.timeUpdate = 0;
+//	EncoderR.timeNew = 0;
+//	EncoderR.timeOld = 0;
+//	EncoderR.timeUpdate = 0;
 	EncoderR.positionNew = 0;
 	EncoderR.positionOld = 0;
 	EncoderR.posCntUpdate = 0;
 	EncoderR.rpm = 0;
 
-	EncoderL.timeNew = 0;
-	EncoderL.timeOld = 0;
-	EncoderL.timeUpdate = 0;
+//	EncoderL.timeNew = 0;
+//	EncoderL.timeOld = 0;
+//	EncoderL.timeUpdate = 0;
 	EncoderL.positionNew = 0;
 	EncoderL.positionOld = 0;
 	EncoderL.posCntUpdate = 0;
 	EncoderL.rpm = 0;
 
+	SoftPwmR.errorValue = 0;
+	SoftPwmR.sumValue = 0;
+	SoftPwmR.pValue = 0;
+	SoftPwmR.iValue = 0;
+	SoftPwmR.pwmFloatValue = 0;
+	SoftPwmR.WheelSpeed = 0;
+	SoftPwmR.reqValueTemp = 0;
 	SoftPwmR.curValue = 0;
 	SoftPwmR.reqValue = 0;
 	SoftPwmR.pwmValue = 0;
 	SoftPwmR.status = 0;
 
+	SoftPwmL.errorValue = 0;
+	SoftPwmL.sumValue = 0;
+	SoftPwmL.pValue = 0;
+	SoftPwmL.iValue = 0;
+	SoftPwmL.pwmFloatValue = 0;
+	SoftPwmL.WheelSpeed = 0;
+	SoftPwmL.reqValueTemp = 0;
 	SoftPwmL.curValue = 0;
 	SoftPwmL.reqValue = 0;
 	SoftPwmL.pwmValue = 0;
 	SoftPwmL.status = 0;
 
-	softCounterValue = 0;
+	kToRpm = (1000*60)/1024;
 
 	memset(txBuffer, '\0', sizeof(txBuffer));
 	memset(rxBuffer, '\0', sizeof(rxBuffer));
 	rxBufferHead = 0;
 	memset(rxBufferCopy, '\0', sizeof(rxBufferCopy));
 
-	joyX = 0;
-	joyY = 0;
+//	joyX = 0;
+//	joyY = 0;
 	tSpeed = 0;
 	aSpeed = 0;
 
@@ -189,6 +195,8 @@ int main(void)
 
 	debugVar = 0;
 	debugVar2 = 0;
+
+	cycle_count = 0;
 
   /* USER CODE END 1 */
 
@@ -214,8 +222,8 @@ int main(void)
   MX_ADC1_Init();
   MX_SPI2_Init();
   MX_USART3_UART_Init();
-  MX_TIM17_Init();
   MX_TIM15_Init();
+  MX_TIM17_Init();
   /* USER CODE BEGIN 2 */
   ADC1_configuration();
   TIM1_configuration();
@@ -224,7 +232,12 @@ int main(void)
   TIM15_additional_configuration();
   USART3_additional_configuration();
 
-  kToRpm = (32*1000*60)/256;
+  GPIOA->ODR |= (1<<6); //EN34
+  GPIOA->ODR |= (1<<3); //EN12
+
+  DWT->CTRL |= (1<<0);  //Enable cycle counter
+  DWT->CTRL |= (1<<0);  //Enable cycle counter
+
 
   pc13EventGroup = xEventGroupCreate();
   pc14EventGroup = xEventGroupCreate();
@@ -241,7 +254,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
-  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(80), pdTRUE, 1, timerForSendDataCallback); //211
+  timerForDataSending = xTimerCreate("TimerForDataSending", pdMS_TO_TICKS(211), pdTRUE, 1, timerForSendDataCallback); //211
   xTimerStart(timerForDataSending, portMAX_DELAY);
   /* USER CODE END RTOS_TIMERS */
 
@@ -265,22 +278,6 @@ int main(void)
   /* definition and creation of EspCommunication */
   osThreadDef(EspCommunication, espCommunication, osPriorityAboveNormal, 0, 256);
   EspCommunicationHandle = osThreadCreate(osThread(EspCommunication), NULL);
-
-  /* definition and creation of EncoderR */
-  osThreadDef(EncoderR, encoderR, osPriorityNormal, 0, 128);
-  EncoderRHandle = osThreadCreate(osThread(EncoderR), NULL);
-
-  /* definition and creation of EncoderL */
-  osThreadDef(EncoderL, encoderL, osPriorityNormal, 0, 128);
-  EncoderLHandle = osThreadCreate(osThread(EncoderL), NULL);
-
-  /* definition and creation of SoftwarePwmR */
-  osThreadDef(SoftwarePwmR, softwarePWMR, osPriorityNormal, 0, 156);
-  SoftwarePwmRHandle = osThreadCreate(osThread(SoftwarePwmR), NULL);
-
-  /* definition and creation of SoftwarePwmL */
-  osThreadDef(SoftwarePwmL, softwarePWML, osPriorityNormal, 0, 156);
-  SoftwarePwmLHandle = osThreadCreate(osThread(SoftwarePwmL), NULL);
 
   /* definition and creation of Accelerometer */
   osThreadDef(Accelerometer, accelerometer, osPriorityNormal, 0, 96);
@@ -513,9 +510,9 @@ static void MX_TIM17_Init(void)
 
   /* USER CODE END TIM17_Init 1 */
   htim17.Instance = TIM17;
-  htim17.Init.Prescaler = 1999;
+  htim17.Init.Prescaler = 639;
   htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim17.Init.Period = 65535;
+  htim17.Init.Period = 100;
   htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim17.Init.RepetitionCounter = 0;
   htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -666,9 +663,9 @@ void ADC1_configuration(void)
 {
 	//NVIC configuration
 	NVIC->IP[11] |= 0x70; //Priority 7
-	NVIC->ISER[0] |= (1<<11); //Enable DMA1 channel 1 interrupt
+//	NVIC->ISER[0] |= (1<<11); //Enable DMA1 channel 1 interrupt
 	NVIC->IP[18] |= 0x70; //Priority 7
-	NVIC->ISER[0] |= (1<<18); //Enable ADC1 global interrupt
+//	NVIC->ISER[0] |= (1<<18); //Enable ADC1 global interrupt
 	//DMA configuration for ADC1
 	RCC->AHBENR |= RCC_AHBENR_DMA1EN; // Enable the DMA1 clock
 	DMA1_Channel1->CCR &= ~DMA_CCR_EN;
@@ -751,14 +748,14 @@ void TIM1_configuration(void)
 	TIM1->CCER |= (1<<0);
 	TIM1->CCER |= (1<<4);
 
-	TIM1->PSC = 7; //7+1 = 8
-
     // Enable the TIM1 interrupt
     NVIC_EnableIRQ(TIM1_UP_TIM16_IRQn);
 
     // Set priority for the TIM1 interrupt
     NVIC_SetPriority(TIM1_UP_TIM16_IRQn, 5); // Adjust priority as needed
 
+//    TIM1->CNT = PRELOADENC;
+    TIM1->PSC = 7; //7+1 = 8
     // Enable the TIM1 counter
     TIM1->CR1 |= TIM_CR1_CEN;
 }
@@ -816,6 +813,12 @@ void TIM15_additional_configuration(void)
 void TIM17_additional_configuration(void)
 {
 	TIM17->DIER |= TIM_DIER_UIE; //UIE: Update interrupt enable
+
+    // Enable the TIM17 interrupt
+    NVIC_EnableIRQ(TIM1_TRG_COM_TIM17_IRQn);
+    // Set priority for the TIM17 interrupt
+    NVIC_SetPriority(TIM1_TRG_COM_TIM17_IRQn, 5);
+
 	TIM17->CR1 |= TIM_CR1_CEN;
 }
 
@@ -1117,8 +1120,8 @@ void espCommunication(void const * argument)
     	                         "Host: 192.168.137.1\r\n"
     	                         "Content-Type: application/json\r\n"
 //    	                         "Content-Length: %d\r\n\r\n"
-    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"joyX\": \"%d\", \"joyY\": \"%d\", \"tSpeed\": \"%f\", \"aSpeed\": \"%f\", \"rReqValue\": \"%d\", \"lReqValue\": \"%d\", \"accelRX\": \"%d\", \"accelRY\": \"%d\", \"accelRZ\": \"%d\", \"accelLX\": \"%d\", \"accelLY\": \"%d\", \"accelLZ\": \"%d\"}",
-								 BatChargeState, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, joyX, joyY, tSpeed, aSpeed, SoftPwmR.reqValue, SoftPwmL.reqValue, accelValueR[0], accelValueR[1], accelValueR[2], accelValueL[0], accelValueL[1], accelValueL[2]);
+    	                         "{\"avrBatVoltage\": \"%d\", \"EncoderR.rpm\": \"%d\", \"EncoderL.rpm\": \"%d\", \"SoftPwmR.pwmValue\": \"%d\", \"SoftPwmL.pwmValue\": \"%d\", \"tSpeed\": \"%f\", \"aSpeed\": \"%f\", \"rReqValue\": \"%d\", \"lReqValue\": \"%d\", \"accelRX\": \"%d\", \"accelRY\": \"%d\", \"accelRZ\": \"%d\", \"accelLX\": \"%d\", \"accelLY\": \"%d\", \"accelLZ\": \"%d\", \"cycle_count\": \"%d\"}",
+								 BatChargeState, EncoderR.rpm, EncoderL.rpm, SoftPwmR.pwmValue, SoftPwmL.pwmValue, tSpeed, aSpeed, SoftPwmR.reqValue, SoftPwmL.reqValue, accelValueR[0], accelValueR[1], accelValueR[2], accelValueL[0], accelValueL[1], accelValueL[2], cycle_count);
 
     	    // Calculate the number of characters in the POST request
     	    int postRequestLength = strlen(txBuffer);
@@ -1138,270 +1141,6 @@ void espCommunication(void const * argument)
 	  vTaskDelay( pdMS_TO_TICKS( 25 ) );
   }
   /* USER CODE END espCommunication */
-}
-
-/* USER CODE BEGIN Header_encoderR */
-/**
-* @brief Function implementing the EncoderR thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_encoderR */
-void encoderR(void const * argument)
-{
-  /* USER CODE BEGIN encoderR */
-  /* Infinite loop */
-  for(;;)
-  {
-	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
-
-	  EncoderR.timeOld = EncoderR.timeNew;
-	  EncoderR.timeNew = TIM17->CNT;
-	  EncoderR.positionOld = EncoderR.positionNew;
-	  EncoderR.positionNew = TIM1->CNT;
-
-	  if(EncoderR.timeNew - EncoderR.timeOld == 0) {
-		  continue;
-	  }
-
-	  switch (EncoderR.posCntUpdate + EncoderR.timeUpdate) {
-		case 0:
-			EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm); //(32*1000*60)/256;
-			break;
-		case POSUPDATED:
-			if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
-			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
-			} else {
-			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew - EncoderR.timeOld)))*kToRpm);
-			}
-			EncoderR.posCntUpdate = 0;
-			break;
-		case TIMEUPDATED:
-			EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - EncoderR.positionOld)) / ((float)(EncoderR.timeNew + 65535 - EncoderR.timeOld)))*kToRpm);
-			EncoderR.timeUpdate = 0;
-			break;
-		case (POSUPDATED + TIMEUPDATED):
-			if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
-			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld)) / ((float)(EncoderR.timeNew + 65535 - EncoderR.timeOld)))*kToRpm);
-			} else {
-			  EncoderR.rpm = -((float)(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld))) / ((float)(EncoderR.timeNew + 65535 - EncoderR.timeOld)))*kToRpm);
-			}
-			EncoderR.posCntUpdate = 0;
-			EncoderR.timeUpdate = 0;
-			break;
-		default:
-			break;
-	}
-	  __asm__ volatile("NOP");
-  }
-  /* USER CODE END encoderR */
-}
-
-/* USER CODE BEGIN Header_encoderL */
-/**
-* @brief Function implementing the EncoderL thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_encoderL */
-void encoderL(void const * argument)
-{
-  /* USER CODE BEGIN encoderL */
-  /* Infinite loop */
-  for(;;)
-  {
-	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
-
-	  if(TIM2->CNT > TIM2->ARR) {
-		  TIM2->EGR |= TIM_EGR_UG;
-	  }
-
-	  EncoderL.timeOld = EncoderL.timeNew;
-	  EncoderL.timeNew = TIM17->CNT;
-	  EncoderL.positionOld = EncoderL.positionNew;
-	  EncoderL.positionNew = TIM2->CNT;
-
-	  if(EncoderL.timeNew - EncoderL.timeOld == 0) {
-		  continue;
-	  }
-
-	  switch (EncoderL.posCntUpdate + EncoderL.timeUpdate) {
-		case 0:
-			EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm); //(32*1000*60)/256;
-			break;
-		case POSUPDATED:
-			if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
-				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
-			} else {
-				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew - EncoderL.timeOld)))*kToRpm);
-			}
-			EncoderL.posCntUpdate = 0;
-			break;
-		case TIMEUPDATED:
-			EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - EncoderL.positionOld)) / ((float)(EncoderL.timeNew + 65535 - EncoderL.timeOld)))*kToRpm);
-			EncoderL.timeUpdate = 0;
-			break;
-		case (POSUPDATED + TIMEUPDATED):
-			if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
-				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)) / ((float)(EncoderL.timeNew + 65535 - EncoderL.timeOld)))*kToRpm);
-			} else {
-				EncoderL.rpm = ((float)(((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld))) / ((float)(EncoderL.timeNew + 65535 - EncoderL.timeOld)))*kToRpm);
-			}
-			EncoderL.posCntUpdate = 0;
-			EncoderL.timeUpdate = 0;
-			break;
-		default:
-			break;
-	}
-
-	  __asm__ volatile("NOP");
-  }
-  /* USER CODE END encoderL */
-}
-
-/* USER CODE BEGIN Header_softwarePWMR */
-/**
-* @brief Function implementing the SoftwarePwmR thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_softwarePWMR */
-void softwarePWMR(void const * argument)
-{
-  /* USER CODE BEGIN softwarePWMR */
-	int errorValue = 0;
-	float sumValue = 0;
-	float pValue = 0;
-	float iValue = 0;
-	float pwmFloatValue = 0;
-	vTaskDelay( pdMS_TO_TICKS( 10 ) );
-	GPIOA->ODR |= (1<<6); //EN34
-
-	SoftPwmR.reqValue = 6000;
-  /* Infinite loop */
-  for(;;)
-  {
-	  float rWheelSpeed = tSpeed - aSpeed*DISBETWHEELS/2;
-	  float reqValueTemp = (rWheelSpeed*60)/(2*3.14*RWHEEL);
-	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
-		  reqValueTemp = 0;
-	  } else if((reqValueTemp > MAXRPM)) {
-		  reqValueTemp = MAXRPM;
-	  } else if((reqValueTemp < -MAXRPM)) {
-		  reqValueTemp = -MAXRPM;
-	  }
-	  SoftPwmR.reqValue = (int16_t)reqValueTemp;
-
-	  SoftPwmR.curValue = EncoderR.rpm;
-	  errorValue = SoftPwmR.reqValue - SoftPwmR.curValue;
-	  pValue = KP * errorValue;
-	  iValue += KI * errorValue;
-	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
-	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
-	  if((iValue <= 50) && (iValue >= -50)) {
-		  sumValue = pValue;
-	  } else {
-		  sumValue = (pValue + iValue);
-	  }
-	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*PWMVAL);
-	  if(pwmFloatValue > PWMVAL) pwmFloatValue = PWMVAL;
-	  else if(pwmFloatValue < -PWMVAL) pwmFloatValue = -PWMVAL;
-	  SoftPwmR.pwmValue = (int16_t)pwmFloatValue;
-	  if(SoftPwmR.reqValue == 0) {
-		  if(SoftPwmR.pwmValue > 0) {
-			  pwmFloatValue -= 1;
-		  }
-		  if(SoftPwmR.pwmValue < 0) {
-			  pwmFloatValue += 1;
-		  }
-	  }
-
-	  if(SoftPwmR.pwmValue < 0) {
-		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue*(-1);
-		  SoftPwmR.status = 2;
-	  } else if(SoftPwmR.pwmValue > 0){
-		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue;
-		  SoftPwmR.status = 1;
-	  } else {
-		  SoftPwmR.status = 0;
-	  }
-
-	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
-  }
-  /* USER CODE END softwarePWMR */
-}
-
-/* USER CODE BEGIN Header_softwarePWML */
-/**
-* @brief Function implementing the SoftwarePwmL thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_softwarePWML */
-void softwarePWML(void const * argument)
-{
-  /* USER CODE BEGIN softwarePWML */
-	int errorValue = 0;
-	float sumValue = 0;
-	float pValue = 0;
-	float iValue = 0;
-	float pwmFloatValue = 0;
-	vTaskDelay( pdMS_TO_TICKS( 10 ) );
-	GPIOA->ODR |= (1<<3); //EN12
-
-	SoftPwmL.reqValue = 6000;
-  /* Infinite loop */
-  for(;;)
-  {
-	  float lWheelSpeed = tSpeed + aSpeed*DISBETWHEELS/2;
-	  float reqValueTemp = (lWheelSpeed*60)/(2*3.14*RWHEEL);
-	  if((reqValueTemp >= - 50) && (reqValueTemp <= 50)) {
-		  reqValueTemp = 0;
-	  } else if((reqValueTemp > MAXRPM)) {
-		  reqValueTemp = MAXRPM;
-	  } else if((reqValueTemp < -MAXRPM)) {
-		  reqValueTemp = -MAXRPM;
-	  }
-	  SoftPwmL.reqValue = (int16_t)reqValueTemp;
-
-	  SoftPwmL.curValue = EncoderL.rpm;
-	  errorValue = SoftPwmL.reqValue - SoftPwmL.curValue;
-	  pValue = KP * errorValue;
-	  iValue += KI * errorValue;
-	  if(iValue > ((float)MAXRPM)) iValue = MAXRPM;
-	  else if(iValue < ((float)-MAXRPM)) iValue = -MAXRPM;
-	  if((iValue <= 50) && (iValue >= -50)) {
-		  sumValue = pValue;
-	  } else {
-		  sumValue = (pValue + iValue);
-	  }
-	  pwmFloatValue += ((((float)sumValue)/((float)MAXRPM))*PWMVAL);
-	  if(pwmFloatValue > PWMVAL) pwmFloatValue = PWMVAL;
-	  else if(pwmFloatValue < -PWMVAL) pwmFloatValue = -PWMVAL;
-	  SoftPwmL.pwmValue = (int16_t)pwmFloatValue;
-	  if(SoftPwmL.reqValue == 0) {
-		  if(SoftPwmL.pwmValue > 0) {
-			  pwmFloatValue -= 1;
-		  }
-		  if(SoftPwmL.pwmValue < 0) {
-			  pwmFloatValue += 1;
-		  }
-	  }
-
-	  if(SoftPwmL.pwmValue < 0) {
-		  TIM15->CCR2 = TIM15->ARR - SoftPwmL.pwmValue*(-1);
-		  SoftPwmL.status = 2;
-	  } else if(SoftPwmL.pwmValue > 0) {
-		  TIM15->CCR2 = TIM15->ARR - SoftPwmL.pwmValue;
-		  SoftPwmL.status = 1;
-	  } else {
-		  SoftPwmL.status = 0;
-	  }
-
-	  vTaskDelay(pdMS_TO_TICKS(ENCDELAY));
-
-  }
-  /* USER CODE END softwarePWML */
 }
 
 /* USER CODE BEGIN Header_accelerometer */
