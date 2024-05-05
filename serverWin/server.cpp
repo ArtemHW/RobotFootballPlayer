@@ -490,7 +490,7 @@ void SendData(SOCKET clientSocket) {
             tSpeedStream << std::fixed << std::setprecision(2) << tSpeed;
         }
         std::string tSpeedStr = tSpeedStream.str();
-        // std::string tSpeedStr = std::to_string((int)(tSpeed*100));
+        // std::string tSpeedStr = std::to_string((int)(tSpeed*100)) ;
 
         // Convert aSpeed to string with 2 decimal places
         std::ostringstream aSpeedStream;
