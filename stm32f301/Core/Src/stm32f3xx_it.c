@@ -328,94 +328,125 @@ void TIM1_BRK_TIM15_IRQHandler(void)
 void TIM1_TRG_COM_TIM17_IRQHandler(void)
 {
 	if((TIM17->SR & TIM_SR_UIF) == TIM_SR_UIF) {
-//		  uint32_t start_cycle = DWT->CYCCNT;
-		  EncoderR.positionOld = EncoderR.positionNew;
-		  EncoderR.positionNew = TIM1->CNT;
+		  uint32_t start_cycle = DWT->CYCCNT;
 
-		  switch (EncoderR.posCntUpdate) {
-			case 0:
-				EncoderR.rpm = -((float)(EncoderR.positionNew - EncoderR.positionOld)*kToRpm); //(1000*60)/1024;
-				break;
-			case POSUPDATED:
-				if((EncoderR.positionOld >= 0) && (EncoderR.positionOld <= 32768) ) {
-				  EncoderR.rpm = -(((float)(EncoderR.positionNew - 65535 - EncoderR.positionOld))*kToRpm);
-				} else {
-				  EncoderR.rpm = -(((float)(EncoderR.positionNew + (65535 - EncoderR.positionOld)))*kToRpm);
-				}
-				EncoderR.posCntUpdate = 0;
-				break;
-			default:
-				break;
+		EncoderR.pulses = TIM1->CNT;
+		if(EncoderR.pulses > 32767) {
+			EncoderR.pulses = (65535 - EncoderR.pulses);
+		} else {
+			EncoderR.pulses = -EncoderR.pulses;
 		}
+		TIM1->EGR |= TIM_EGR_UG;
+//		EncoderR.sumPulses += EncoderR.pulses;
+//		if((EncoderR.pulses > 5) || (EncoderR.pulses < -5)) EncoderR.iter += 1;
+		EncoderR.rpm = (EncoderR.pulses * 1000 * 60) / 10240; //RPM
 //		uint32_t end_cycle = DWT->CYCCNT;
 //		cycle_count = end_cycle - start_cycle;
-//		EncoderR.rpm = -((float)((int32_t)TIM1->CNT - PRELOADENC)*kToRpm); //(1000*60)/1024;
-//		TIM1->CNT = PRELOADENC;
 
 
-		if(TIM2->CNT > TIM2->ARR) {
-		  TIM2->EGR |= TIM_EGR_UG;
+//		if(TIM2->CNT > TIM2->ARR) {
+//		  TIM2->EGR |= TIM_EGR_UG;
+//		}
+		EncoderL.pulses = TIM2->CNT;
+		if(EncoderL.pulses > 32767) {
+			EncoderL.pulses = -(65535 - EncoderL.pulses);
 		}
-		EncoderL.positionOld = EncoderL.positionNew;
-		EncoderL.positionNew = TIM2->CNT;
-
-		  switch (EncoderL.posCntUpdate) {
-			case 0:
-				EncoderL.rpm = ((float)(EncoderL.positionNew - EncoderL.positionOld))*kToRpm; //(1000*60)/1024;
-				break;
-			case POSUPDATED:
-				if((EncoderL.positionOld >= 0) && (EncoderL.positionOld <= 32768) ) {
-					EncoderL.rpm = (float)(EncoderL.positionNew - 65535 - EncoderL.positionOld)*kToRpm;
-				} else {
-					EncoderL.rpm = ((float)(EncoderL.positionNew + (65535 - EncoderL.positionOld)))*kToRpm;
-				}
-				EncoderL.posCntUpdate = 0;
-				break;
-			default:
-				break;
-		}
+		TIM2->EGR |= TIM_EGR_UG;
+		EncoderL.rpm = (EncoderL.pulses * 1000 * 60) / 10240; //RPM
 
 //			uint32_t end_cycle = DWT->CYCCNT;
 //			cycle_count = end_cycle - start_cycle;
 
 
+//		SoftPwmR.WheelSpeed = tSpeed - aSpeed*DISBETWHEELS/2;
+//		  uint32_t start_cycle = DWT->CYCCNT;
+//		SoftPwmR.reqValueTemp = (SoftPwmR.WheelSpeed*60)/(2*3.14*RWHEEL);
+//			uint32_t end_cycle = DWT->CYCCNT;
+//			cycle_count = end_cycle - start_cycle;
+//		if((SoftPwmR.reqValueTemp >= - 50) && (SoftPwmR.reqValueTemp <= 50)) {
+//			SoftPwmR.reqValueTemp = 0;
+//		} else if((SoftPwmR.reqValueTemp > MAXRPM)) {
+//			SoftPwmR.reqValueTemp = MAXRPM;
+//		} else if((SoftPwmR.reqValueTemp < -MAXRPM)) {
+//			SoftPwmR.reqValueTemp = -MAXRPM;
+//		}
+//		SoftPwmR.reqValue = (int16_t)SoftPwmR.reqValueTemp;
+//
+//		SoftPwmR.curValue = EncoderR.rpm;
+//		SoftPwmR.errorValue = SoftPwmR.reqValue - SoftPwmR.curValue;
+//		SoftPwmR.pValue = KP * SoftPwmR.errorValue;
+//		SoftPwmR.iValue += KI * SoftPwmR.errorValue;
+//		if(SoftPwmR.iValue > ((float)MAXRPM)) SoftPwmR.iValue = MAXRPM;
+//		else if(SoftPwmR.iValue < ((float)-MAXRPM)) SoftPwmR.iValue = -MAXRPM;
+//		if((SoftPwmR.iValue <= 50) && (SoftPwmR.iValue >= -50)) {
+//			SoftPwmR.sumValue = SoftPwmR.pValue;
+//		} else {
+//			SoftPwmR.sumValue = (SoftPwmR.pValue + SoftPwmR.iValue);
+//		}
+//		SoftPwmR.pwmFloatValue += ((((float)SoftPwmR.sumValue)/((float)MAXRPM))*PWMVAL);
+//		if(SoftPwmR.pwmFloatValue > PWMVAL) SoftPwmR.pwmFloatValue = PWMVAL;
+//		else if(SoftPwmR.pwmFloatValue < -PWMVAL) SoftPwmR.pwmFloatValue = -PWMVAL;
+//		SoftPwmR.pwmValue = (int16_t)SoftPwmR.pwmFloatValue;
+//		if(SoftPwmR.reqValue == 0) {
+//		  if(SoftPwmR.pwmValue > 0) {
+//			  SoftPwmR.pwmFloatValue -= 1;
+//		  }
+//		  if(SoftPwmR.pwmValue < 0) {
+//			  SoftPwmR.pwmFloatValue += 1;
+//		  }
+//		}
+//
+//		if(SoftPwmR.pwmValue < 0) {
+//		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue*(-1);
+//		  SoftPwmR.status = 2;
+//		} else if(SoftPwmR.pwmValue > 0){
+//		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue;
+//		  SoftPwmR.status = 1;
+//		} else {
+//		  SoftPwmR.status = 0;
+//		}
+
 		SoftPwmR.WheelSpeed = tSpeed - aSpeed*DISBETWHEELS/2;
-		  uint32_t start_cycle = DWT->CYCCNT;
-		SoftPwmR.reqValueTemp = (SoftPwmR.WheelSpeed*60)/(2*3.14*RWHEEL);
-			uint32_t end_cycle = DWT->CYCCNT;
-			cycle_count = end_cycle - start_cycle;
-		if((SoftPwmR.reqValueTemp >= - 50) && (SoftPwmR.reqValueTemp <= 50)) {
+		SoftPwmR.reqValueTemp = ((SoftPwmR.WheelSpeed)/(2*3.14*RWHEEL))*10240/1000;
+		if((SoftPwmR.reqValueTemp >= - 4) && (SoftPwmR.reqValueTemp <= 4)) {
 			SoftPwmR.reqValueTemp = 0;
-		} else if((SoftPwmR.reqValueTemp > MAXRPM)) {
-			SoftPwmR.reqValueTemp = MAXRPM;
-		} else if((SoftPwmR.reqValueTemp < -MAXRPM)) {
-			SoftPwmR.reqValueTemp = -MAXRPM;
+		} else if((SoftPwmR.reqValueTemp > MAXPULSES)) {
+			SoftPwmR.reqValueTemp = MAXPULSES;
+		} else if((SoftPwmR.reqValueTemp < -MAXPULSES)) {
+			SoftPwmR.reqValueTemp = -MAXPULSES;
 		}
 		SoftPwmR.reqValue = (int16_t)SoftPwmR.reqValueTemp;
 
-		SoftPwmR.curValue = EncoderR.rpm;
-		SoftPwmR.errorValue = SoftPwmR.reqValue - SoftPwmR.curValue;
-		SoftPwmR.pValue = KP * SoftPwmR.errorValue;
-		SoftPwmR.iValue += KI * SoftPwmR.errorValue;
-		if(SoftPwmR.iValue > ((float)MAXRPM)) SoftPwmR.iValue = MAXRPM;
-		else if(SoftPwmR.iValue < ((float)-MAXRPM)) SoftPwmR.iValue = -MAXRPM;
-		if((SoftPwmR.iValue <= 50) && (SoftPwmR.iValue >= -50)) {
-			SoftPwmR.sumValue = SoftPwmR.pValue;
-		} else {
-			SoftPwmR.sumValue = (SoftPwmR.pValue + SoftPwmR.iValue);
-		}
-		SoftPwmR.pwmFloatValue += ((((float)SoftPwmR.sumValue)/((float)MAXRPM))*PWMVAL);
-		if(SoftPwmR.pwmFloatValue > PWMVAL) SoftPwmR.pwmFloatValue = PWMVAL;
-		else if(SoftPwmR.pwmFloatValue < -PWMVAL) SoftPwmR.pwmFloatValue = -PWMVAL;
-		SoftPwmR.pwmValue = (int16_t)SoftPwmR.pwmFloatValue;
-		if(SoftPwmR.reqValue == 0) {
-		  if(SoftPwmR.pwmValue > 0) {
-			  SoftPwmR.pwmFloatValue -= 1;
-		  }
-		  if(SoftPwmR.pwmValue < 0) {
-			  SoftPwmR.pwmFloatValue += 1;
-		  }
-		}
+		SoftPwmR.curValue = EncoderR.pulses;
+		SoftPwmR.errorValue = (SoftPwmR.reqValue - SoftPwmR.curValue)*1000000;
+//		SoftPwmR.pValue = KP * SoftPwmR.errorValue;
+//		SoftPwmR.iValue += KI * SoftPwmR.errorValue;
+		SoftPwmR.pVal = SoftPwmR.errorValue / KPI * KPM;
+//		SoftPwmR.iVal += SoftPwmR.errorValue / KII * KIM;
+//		if(SoftPwmR.iValue > ((float)MAXPULSES)) SoftPwmR.iValue = MAXPULSES;
+//		else if(SoftPwmR.iVal < ((float)-MAXPULSES)) SoftPwmR.iValue = -MAXPULSES;
+//		if((SoftPwmR.iValue <= 4) && (SoftPwmR.iValue >= -4)) {
+//			SoftPwmR.sumValue = SoftPwmR.pValue;
+//		} else {
+//			SoftPwmR.sumValue = (SoftPwmR.pValue + SoftPwmR.iValue);
+//		}
+		SoftPwmR.sumVal += (SoftPwmR.pVal + SoftPwmR.iVal);
+//		SoftPwmR.pwmFloatValue += ((((float)SoftPwmR.sumValue)/((float)MAXRPM))*PWMVAL);
+//		if(SoftPwmR.pwmFloatValue > PWMVAL) SoftPwmR.pwmFloatValue = PWMVAL;
+//		else if(SoftPwmR.pwmFloatValue < -PWMVAL) SoftPwmR.pwmFloatValue = -PWMVAL;
+//		SoftPwmR.pwmValue = (int16_t)SoftPwmR.pwmFloatValue;
+		SoftPwmR.pwmValue = ((SoftPwmR.sumVal / ((MAXPULSES*1000000)/1000))*PWMVAL)/1000;
+		if(SoftPwmR.pwmValue > PWMVAL) SoftPwmR.pwmValue = PWMVAL;
+		else if(SoftPwmR.pwmValue < -PWMVAL) SoftPwmR.pwmValue = -PWMVAL;
+
+//		if(SoftPwmR.reqValue == 0) {
+//		  if(SoftPwmR.pwmValue > 0) {
+//			  SoftPwmR.pwmFloatValue -= 1;
+//		  }
+//		  if(SoftPwmR.pwmValue < 0) {
+//			  SoftPwmR.pwmFloatValue += 1;
+//		  }
+//		}
 
 		if(SoftPwmR.pwmValue < 0) {
 		  TIM15->CCR1 = TIM15->ARR - SoftPwmR.pwmValue*(-1);
@@ -430,41 +461,25 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)
 //		uint32_t end_cycle = DWT->CYCCNT;
 //		cycle_count = end_cycle - start_cycle;
 
-
 		SoftPwmL.WheelSpeed = tSpeed + aSpeed*DISBETWHEELS/2;
-		SoftPwmL.reqValueTemp = (SoftPwmL.WheelSpeed*60)/(2*3.14*RWHEEL);
-		if((SoftPwmL.reqValueTemp >= - 50) && (SoftPwmL.reqValueTemp <= 50)) {
+		SoftPwmL.reqValueTemp = ((SoftPwmL.WheelSpeed)/(2*3.14*RWHEEL))*10240/1000;
+		if((SoftPwmL.reqValueTemp >= - 4) && (SoftPwmL.reqValueTemp <= 4)) {
 			SoftPwmL.reqValueTemp = 0;
-		} else if((SoftPwmL.reqValueTemp > MAXRPM)) {
-			SoftPwmL.reqValueTemp = MAXRPM;
-		} else if((SoftPwmL.reqValueTemp < -MAXRPM)) {
-			SoftPwmL.reqValueTemp = -MAXRPM;
+		} else if((SoftPwmL.reqValueTemp > MAXPULSES)) {
+			SoftPwmL.reqValueTemp = MAXPULSES;
+		} else if((SoftPwmL.reqValueTemp < -MAXPULSES)) {
+			SoftPwmL.reqValueTemp = -MAXPULSES;
 		}
 		SoftPwmL.reqValue = (int16_t)SoftPwmL.reqValueTemp;
 
-		SoftPwmL.curValue = EncoderL.rpm;
-		SoftPwmL.errorValue = SoftPwmL.reqValue - SoftPwmL.curValue;
-		SoftPwmL.pValue = KP * SoftPwmL.errorValue;
-		SoftPwmL.iValue += KI * SoftPwmL.errorValue;
-		if(SoftPwmL.iValue > ((float)MAXRPM)) SoftPwmL.iValue = MAXRPM;
-		else if(SoftPwmL.iValue < ((float)-MAXRPM)) SoftPwmL.iValue = -MAXRPM;
-		if((SoftPwmL.iValue <= 50) && (SoftPwmL.iValue >= -50)) {
-			SoftPwmL.sumValue = SoftPwmL.pValue;
-		} else {
-			SoftPwmL.sumValue = (SoftPwmL.pValue + SoftPwmL.iValue);
-		}
-		SoftPwmL.pwmFloatValue += ((((float)SoftPwmL.sumValue)/((float)MAXRPM))*PWMVAL);
-		if(SoftPwmL.pwmFloatValue > PWMVAL) SoftPwmL.pwmFloatValue = PWMVAL;
-		else if(SoftPwmL.pwmFloatValue < -PWMVAL) SoftPwmL.pwmFloatValue = -PWMVAL;
-		SoftPwmL.pwmValue = (int16_t)SoftPwmL.pwmFloatValue;
-		if(SoftPwmL.reqValue == 0) {
-		  if(SoftPwmL.pwmValue > 0) {
-			  SoftPwmL.pwmFloatValue -= 1;
-		  }
-		  if(SoftPwmL.pwmValue < 0) {
-			  SoftPwmL.pwmFloatValue += 1;
-		  }
-		}
+		SoftPwmL.curValue = EncoderL.pulses;
+		SoftPwmL.errorValue = (SoftPwmL.reqValue - SoftPwmL.curValue)*1000000;
+		SoftPwmL.pVal = SoftPwmL.errorValue / KPI;
+//		SoftPwmL.iVal += SoftPwmL.errorValue / KII;
+		SoftPwmL.sumVal += (SoftPwmL.pVal + SoftPwmL.iVal);
+		SoftPwmL.pwmValue = ((SoftPwmL.sumVal / ((MAXPULSES*1000000)/1000))*PWMVAL)/1000;
+		if(SoftPwmL.pwmValue > PWMVAL) SoftPwmL.pwmValue = PWMVAL;
+		else if(SoftPwmL.pwmValue < -PWMVAL) SoftPwmL.pwmValue = -PWMVAL;
 
 		if(SoftPwmL.pwmValue < 0) {
 		  TIM15->CCR2 = TIM15->ARR - SoftPwmL.pwmValue*(-1);
@@ -478,8 +493,8 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)
 
 
 		TIM17->SR &= ~(TIM_SR_UIF);
-//		uint32_t end_cycle = DWT->CYCCNT;
-//		cycle_count = end_cycle - start_cycle;
+		uint32_t end_cycle = DWT->CYCCNT;
+		cycle_count = end_cycle - start_cycle;
 
 	}
 }

@@ -145,6 +145,9 @@ int main(void)
 	EncoderR.positionOld = 0;
 	EncoderR.posCntUpdate = 0;
 	EncoderR.rpm = 0;
+	EncoderR.pulses = 0;
+	EncoderR.sumPulses = 0;
+	EncoderR.iter = 0;
 
 //	EncoderL.timeNew = 0;
 //	EncoderL.timeOld = 0;
@@ -153,6 +156,7 @@ int main(void)
 	EncoderL.positionOld = 0;
 	EncoderL.posCntUpdate = 0;
 	EncoderL.rpm = 0;
+	EncoderL.pulses = 0;
 
 	SoftPwmR.errorValue = 0;
 	SoftPwmR.sumValue = 0;
@@ -165,6 +169,9 @@ int main(void)
 	SoftPwmR.reqValue = 0;
 	SoftPwmR.pwmValue = 0;
 	SoftPwmR.status = 0;
+	SoftPwmR.sumVal = 0;
+	SoftPwmR.pVal = 0;
+	SoftPwmR.iVal = 0;
 
 	SoftPwmL.errorValue = 0;
 	SoftPwmL.sumValue = 0;
@@ -177,8 +184,11 @@ int main(void)
 	SoftPwmL.reqValue = 0;
 	SoftPwmL.pwmValue = 0;
 	SoftPwmL.status = 0;
+	SoftPwmL.sumVal = 0;
+	SoftPwmL.pVal = 0;
+	SoftPwmL.iVal = 0;
 
-	kToRpm = (1000*60)/1024;
+	kToRpm = (1000*60)/10240;
 
 	memset(txBuffer, '\0', sizeof(txBuffer));
 	memset(rxBuffer, '\0', sizeof(rxBuffer));
@@ -467,7 +477,7 @@ static void MX_TIM15_Init(void)
 
   /* USER CODE END TIM15_Init 1 */
   htim15.Instance = TIM15;
-  htim15.Init.Prescaler = 15;
+  htim15.Init.Prescaler = 10;
   htim15.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim15.Init.Period = 400;
   htim15.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -755,7 +765,7 @@ void TIM1_configuration(void)
     NVIC_SetPriority(TIM1_UP_TIM16_IRQn, 5); // Adjust priority as needed
 
 //    TIM1->CNT = PRELOADENC;
-    TIM1->PSC = 7; //7+1 = 8
+//    TIM1->PSC = 7; //7+1 = 8
     // Enable the TIM1 counter
     TIM1->CR1 |= TIM_CR1_CEN;
 }
@@ -783,7 +793,7 @@ void TIM2_configuration(void)
 	TIM2->CCER |= (1<<0);
 	TIM2->CCER |= (1<<4);
 
-	TIM2->PSC = 7; //7+1 = 8
+//	TIM2->PSC = 7; //7+1 = 8
 	TIM2->ARR = 0xFFFF; //65535
 
     // Enable the TIM2 interrupt
@@ -994,6 +1004,7 @@ void espCommunication(void const * argument)
 {
   /* USER CODE BEGIN espCommunication */
 	vTaskDelay( pdMS_TO_TICKS( 600 ) );
+	NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn);
 	taskENTER_CRITICAL();
 	  GPIOB->ODR |= (1<<1); //RST_ESP
 	  GPIOB->ODR |= (1<<2); //EN_ESP
@@ -1048,6 +1059,7 @@ void espCommunication(void const * argument)
 	  memset(txBuffer, '\0', sizeof(txBuffer));
 	  vTaskDelay( pdMS_TO_TICKS( 50 ) );
 
+	  NVIC_EnableIRQ(TIM1_BRK_TIM15_IRQn);
 	  __asm__ volatile("NOP");
 
   /* Infinite loop */

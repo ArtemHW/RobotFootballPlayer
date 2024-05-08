@@ -44,6 +44,9 @@ struct EncoderStr {
 	int32_t positionOld;
 	uint8_t posCntUpdate;
 	int rpm;
+	int pulses;
+	int sumPulses;
+	int iter;
 };
 
 struct SoftPWM {
@@ -54,11 +57,13 @@ struct SoftPWM {
 	float pwmFloatValue;
 	float WheelSpeed;
 	float reqValueTemp;
-	int16_t reqValue;
-	int16_t curValue;
-	int16_t pwmValue;
+	int reqValue;
+	int curValue;
+	int pwmValue;
 	uint8_t status;
-
+	int sumVal;
+	int pVal;
+	int iVal;
 };
 /* USER CODE END ET */
 
@@ -108,7 +113,12 @@ void Error_Handler(void);
 #define UNDERVOLTAGEONLED 0x2
 #define KP 0.001f
 #define KI  0.0000001f   //0.0001f
+#define KPI 882//1000 //10^3
+#define KII 250000//321000//1000000 //10^6
+#define KPM 1//1000 //10^3
+#define KIM 0//321000//1000000 //10^6
 #define MAXRPM 500
+#define MAXPULSES 85
 #define PWMVAL 400
 #define DISBETWHEELS 0.070
 #define RWHEEL 0.0175

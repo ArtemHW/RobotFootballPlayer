@@ -24,7 +24,6 @@ void sleep_for(std::chrono::milliseconds duration);
 void SendHtmlFile(SOCKET clientSocket, const std::string& filename);
 
 std::vector<std::thread> threads;
-// std::unordered_map<std::thread::id, std::atomic<bool>> threadFlags;
 std::unordered_map<std::thread::id, uint8_t> threadFlags;
 
 std::string avrBatVoltage;
@@ -185,13 +184,8 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
             return;
         } else {
             std::cout << "Received data: " << std::endl;
-            // for (int i = 0; i < bytes; ++i) {
-            //     std::cout << buff[i];
-            // }
             std::cout << std::endl;
-            // Parse the request and send a response as before.
-            // ...
-                // Check if it's a GET request
+             // Check if it's a GET request
             if (strstr(buff, "GET /home") != NULL) {
                 // Handle GET request
                 std::string response = readStringFromFile("example.txt");
@@ -293,24 +287,6 @@ void ReceiveData(SOCKET clientSocket, std::thread::id ThreadId) {
                                 softPwmLValue = softPwmLPwmValue;
                             }
                         }
-
-                        // size_t joyXValuePos = jsonContent.find("\"joyX\":");
-                        // if (joyXValuePos != std::string::npos) {
-                        //     size_t joyXValueEnd = jsonContent.find(",", joyXValuePos);
-                        //     if (joyXValueEnd != std::string::npos) {
-                        //         std::string joyXValue = jsonContent.substr(joyXValuePos + 7, joyXValueEnd - (joyXValuePos + 7));
-                        //         std::cout << "\033[33mjoyX: " << joyXValue << "\033[0m" << std::endl;
-                        //     }
-                        // }
-
-                        // size_t joyYValuePos = jsonContent.find("\"joyY\":");
-                        // if (joyYValuePos != std::string::npos) {
-                        //     size_t joyYValueEnd = jsonContent.find(",", joyYValuePos);
-                        //     if (joyYValueEnd != std::string::npos) {
-                        //         std::string joyYValue = jsonContent.substr(joyYValuePos + 7, joyYValueEnd - (joyYValuePos + 7));
-                        //         std::cout << "\033[33mjoyY: " << joyYValue << "\033[0m" << std::endl;
-                        //     }
-                        // }
 
                         size_t tSpeedValuePos = jsonContent.find("\"tSpeed\":");
                         if (tSpeedValuePos != std::string::npos) {
@@ -490,7 +466,6 @@ void SendData(SOCKET clientSocket) {
             tSpeedStream << std::fixed << std::setprecision(2) << tSpeed;
         }
         std::string tSpeedStr = tSpeedStream.str();
-        // std::string tSpeedStr = std::to_string((int)(tSpeed*100)) ;
 
         // Convert aSpeed to string with 2 decimal places
         std::ostringstream aSpeedStream;
@@ -504,7 +479,6 @@ void SendData(SOCKET clientSocket) {
         std::string aSpeedStr = aSpeedStream.str();
 
         std::cout << "JOY_T" << tSpeedStr  << "A" << aSpeedStr << "_" << std::endl;
-        // std::string message = "JOY_X" + joyX + "Y" + joyY + "_";
         std::string message = "TSP" + tSpeedStr + "_ASP" + aSpeedStr + "_";
         if(sendResponse(clientSocket, message) != 0) {
             break;
